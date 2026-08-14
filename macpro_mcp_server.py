@@ -8,6 +8,9 @@ mcp = FastMCP("MacPro G5 Controller")
 SSH_TARGET = "macpro"
 SSH_USER = "ai-cockpit"
 
+MAX_OUTPUT_LENGTH = 15000 # Truncate stdout if it gets too large
+BLOCKED_DIRECTORIES = [".venv", "venv", "node_modules", ".git", "__pycache__", "build", "dist"]
+
 def run_ssh_command(cmd: str, stdin_data: str = None) -> str:
     """Helper to run a raw SSH command."""
     ssh_cmd = ["ssh", "-o", f"User={SSH_USER}", SSH_TARGET, cmd]
@@ -17,9 +20,16 @@ def run_ssh_command(cmd: str, stdin_data: str = None) -> str:
             result = subprocess.run(ssh_cmd, input=stdin_data.encode('utf-8'), capture_output=True, text=True, check=True)
         else:
             result = subprocess.run(ssh_cmd, capture_output=True, text=True, check=True)
-        return result.stdout
+            
+        output = result.stdout
+        if len(output) > MAX_OUTPUT_LENGTH:
+            return output[:MAX_OUTPUT_LENGTH] + f"\n\n... [TRUNCATED: Output exceeded {MAX_OUTPUT_LENGTH} characters. Be more specific!]"
+        return output
     except subprocess.CalledProcessError as e:
-        return f"ERROR (Exit Code {e.returncode}):\nSTDOUT:\n{e.stdout}\nSTDERR:\n{e.stderr}"
+        err = f"ERROR (Exit Code {e.returncode}):\nSTDOUT:\n{e.stdout}\nSTDERR:\n{e.stderr}"
+        if len(err) > MAX_OUTPUT_LENGTH:
+            return err[:MAX_OUTPUT_LENGTH] + "\n\n... [TRUNCATED]"
+        return err
     except Exception as e:
         return f"EXECUTION FAILED: {str(e)}"
 
@@ -28,6 +38,7 @@ def g5_execute_bash(command: str) -> str:
     """
     Execute a raw Bash command on the Mac Pro.
     Best for simple system queries, restarting services, or managing files.
+    Output is automatically truncated to prevent context window blowouts.
     """
     return run_ssh_command(command)
 
@@ -35,7 +46,23 @@ def g5_execute_bash(command: str) -> str:
 def g5_read_file(path: str) -> str:
     """
     Read the contents of a file on the Mac Pro.
+    Automatically blocks reading from virtual environments, git directories, or node_modules.
     """
+    for blocked in BLOCKED_DIRECTORIES:
+        if f"/{blocked}/" in path or path.endswith(f"/{blocked}") or path.startswith(f"{blocked}/") or path == blocked:
+            return f"ERROR: Access denied. Reading from '{blocked}' directories is blocked to protect the context window."
+            
+    # Check file size before reading (prevent > 100KB)
+    check_size_cmd = f"wc -c < '{path}'"
+    size_str = run_ssh_command(check_size_cmd).strip()
+    
+    try:
+        size = int(size_str)
+        if size > 100000:
+            return f"ERROR: File is too large ({size} bytes). Max allowed is 100,000 bytes. Use g5_execute_bash with 'head', 'tail', or 'grep' to search it instead."
+    except ValueError:
+        pass # File might not exist, let 'cat' handle the error
+        
     return run_ssh_command(f"cat '{path}'")
 
 @mcp.tool()
