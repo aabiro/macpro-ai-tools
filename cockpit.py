@@ -7,48 +7,70 @@ import sys
 import os
 import textwrap
 
-GATEWAY_URL = "http://100.64.0.6:8080/v1/chat"
+GATEWAY_URL = "http://100.64.0.6:8081/v1/chat"
 LOG_FILE = "/var/log/system.log"
 
 def call_gateway(provider, prompt, system_prompt=None, history=None):
     if history is None:
         history = []
     
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
+    payload = {}
     
-    messages.extend(history)
-    messages.append({"role": "user", "content": prompt})
+    if provider == "openai":
+        payload = {"max_tokens": 800, "messages": []}
+        payload["model"] = "gpt-4o"
+        if system_prompt:
+            payload["messages"].append({"role": "system", "content": system_prompt})
+        payload["messages"].extend(history)
+        payload["messages"].append({"role": "user", "content": prompt})
+    elif provider == "anthropic":
+        payload = {"max_tokens": 800, "messages": []}
+        payload["model"] = "claude-3-5-sonnet-20240620"
+        if system_prompt:
+            payload["system"] = system_prompt
+        payload["messages"].extend(history)
+        payload["messages"].append({"role": "user", "content": prompt})
+    elif provider == "gemini":
+        payload["model"] = "gemini-1.5-pro"
+        contents = []
+        for m in history:
+            role = "model" if m["role"] == "assistant" else "user"
+            contents.append({"role": role, "parts": [{"text": m["content"]}]})
+        contents.append({"role": "user", "parts": [{"text": prompt}]})
+        payload["contents"] = contents
+        if system_prompt:
+            payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
     
-    data = json.dumps({
-        "model": "gpt-4o" if provider == "openai" else "claude-3-5-sonnet-20240620",
-        "messages": messages,
-        "max_tokens": 800
-    })
-    
+    data = json.dumps(payload)
     url = "%s/%s" % (GATEWAY_URL, provider)
+    
     req = urllib2.Request(url, data, {'Content-Type': 'application/json'})
     try:
         response = urllib2.urlopen(req)
         result = json.loads(response.read())
-        # Handle both OpenAI and Anthropic response formats roughly
+        # Handle response formats
         if provider == "openai":
             return result['choices'][0]['message']['content']
-        else:
+        elif provider == "anthropic":
             return result.get('content', [{'text': 'No response text'}])[0].get('text', str(result))
+        elif provider == "gemini":
+            try:
+                return result['candidates'][0]['content']['parts'][0]['text']
+            except KeyError:
+                return "Gemini Error: " + str(result)
+    except urllib2.HTTPError as e:
+        return "HTTP ERROR %s: %s" % (e.code, e.read())
     except Exception as e:
         return "LINK SEVERED: " + str(e)
 
 def fetch_logs(lines=100):
     try:
-        # Requires the user to have sudo NOPASSWD access to tail /var/log/system.log
         return os.popen("sudo tail -n %d %s" % (lines, LOG_FILE)).read()
     except Exception as e:
         return "Log access denied: " + str(e)
 
-def draw_header(stdscr, width, active_mode):
-    header = " === G5 AI COCKPIT [LINK: 100.64.0.6] === "
+def draw_header(stdscr, width, active_mode, provider):
+    header = " === G5 AI COCKPIT [LINK: 100.64.0.6 | %s] === " % provider.upper()
     stdscr.addstr(0, (width - len(header)) // 2, header, curses.color_pair(3) | curses.A_BOLD | curses.A_REVERSE)
     
     modes = [("1", "Oracle"), ("2", "Custodian (Logs)"), ("3", "Retro-Coder"), ("Q", "Quit")]
@@ -59,11 +81,14 @@ def draw_header(stdscr, width, active_mode):
 def main(stdscr):
     curses.start_color()
     curses.use_default_colors()
-    curses.init_pair(1, curses.COLOR_GREEN, -1)   # AI Text
-    curses.init_pair(2, curses.COLOR_CYAN, -1)    # User Text
-    curses.init_pair(3, curses.COLOR_MAGENTA, -1) # Borders/Headers
-    curses.init_pair(4, curses.COLOR_YELLOW, -1)  # Status
-    curses.init_pair(5, curses.COLOR_RED, -1)     # Errors
+    curses.init_pair(1, curses.COLOR_GREEN, -1)
+    curses.init_pair(2, curses.COLOR_CYAN, -1)
+    curses.init_pair(3, curses.COLOR_MAGENTA, -1)
+    curses.init_pair(4, curses.COLOR_YELLOW, -1)
+    curses.init_pair(5, curses.COLOR_RED, -1)
+
+    # DEFAULT TO GEMINI
+    AI_PROVIDER = "gemini"
 
     mode = "oracle"
     oracle_history = []
@@ -73,7 +98,7 @@ def main(stdscr):
         stdscr.clear()
         height, width = stdscr.getmaxyx()
         
-        draw_header(stdscr, width, mode)
+        draw_header(stdscr, width, mode, AI_PROVIDER)
         
         if mode == "oracle":
             row = 4
@@ -106,8 +131,8 @@ def main(stdscr):
             stdscr.addstr(height - 1, 9, "Transmitting...", curses.A_DIM)
             stdscr.refresh()
             
-            sys_prompt = "You are The Oracle, communicating through a 2004 Power Mac G5 terminal. Keep answers concise and slightly cyberpunk."
-            reply = call_gateway("openai", user_input, sys_prompt, oracle_history)
+            sys_prompt = "You are The Oracle, communicating through a 2004 Power Mac G5 terminal. Keep answers concise, highly intelligent, and slightly cyberpunk."
+            reply = call_gateway(AI_PROVIDER, user_input, sys_prompt, oracle_history)
             oracle_history.append({"role": "user", "content": user_input})
             oracle_history.append({"role": "assistant", "content": reply})
             
@@ -118,7 +143,7 @@ def main(stdscr):
                 stdscr.refresh()
                 logs = fetch_logs(100)
                 sys_prompt = "You are a vintage Apple technician diagnosing a PowerPC G5. Analyze the following OS X system.log excerpt for hardware/software faults. Be concise."
-                sys_log_result = call_gateway("openai", logs, sys_prompt)
+                sys_log_result = call_gateway(AI_PROVIDER, logs, sys_prompt)
             
             row = 6
             wrapped = textwrap.wrap(sys_log_result, width - 4)
