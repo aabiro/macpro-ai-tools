@@ -183,21 +183,28 @@ stays exactly where it is.
 ## 6. Install El Capitan to the 150 GB partition
 
 El Capitan (10.11) does not officially support the Mac Pro 1,1 — the machine's
-32-bit EFI is below its minimum. Installing it requires a community-patched
-installer (the "MacPostFactor" / "Pikify" approach referenced in the original
-plan).
+32-bit EFI is below its minimum. It requires a community-patched installer
+(the "MacPostFactor" / "Pikify" approach referenced in the original plan).
 
-Honest assessment: this is the least reliable step in the runbook. It relies on
-unofficial tooling, and on a machine that is changing hands it adds a partition
-the new owner may never use.
+**You have the patched installer**, so this step is viable. Procedure:
 
-**Consider skipping it.** Giving Lion the full 1 TB and putting a current Linux
-on `disk1` produces a more useful machine than a patched, unsupported,
-already-out-of-support 2015 macOS.
+1. Put the patched installer on a USB drive from a modern Mac.
+2. Boot the Mac Pro holding **Option**.
+3. Select the installer.
+4. Install to the **El Capitan** partition — the 150 GB one created in §3.
 
-If you do want it: build the patched installer on a modern Mac, put it on USB,
-boot holding Option, and install to the **El Capitan** partition. Do not let it
-touch the Lion partition.
+**Do not let it touch the Lion partition.** The installer will happily offer it.
+Confirm the destination name and size on the selection screen before continuing.
+
+Two cautions worth knowing before you start:
+
+- The patch works by substituting a `boot.efi` that the stock installer refuses
+  to use. It is unofficial, unsupported, and can be broken by any later system
+  update — do not apply macOS updates to that partition casually.
+- El Capitan left security support in 2018. Its Safari cannot reach most of the
+  modern web either. It is more capable than Lion, but it is not a solution to
+  the TLS problem — Linux on `disk1` is. Treat El Capitan as the bridge for
+  period software that needs something newer than Lion, not as the daily driver.
 
 ---
 

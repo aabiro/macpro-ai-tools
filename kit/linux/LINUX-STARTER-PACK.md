@@ -113,12 +113,38 @@ take. `disk0` holds your working Lion system — do not touch it.**
 
 ## Step 2 — Get the installer image
 
-On a modern computer, download the Debian netinst image for `amd64` from:
+**Use Debian's Mac-specific image.** Debian publishes a separate build carrying a
+**32-bit EFI bootloader**, made for exactly the `EFI32` problem above:
 
-<https://www.debian.org/distrib/netinst>
+```
+debian-mac-13.6.0-amd64-netinst.iso     <- USE THIS ONE
+debian-13.6.0-amd64-netinst.iso         <- the standard image; 64-bit EFI only
+```
+
+Get it from the `iso-cd` directory of the current release:
+
+<https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/>
+
+Note the `debian-mac-` prefix. It is easy to grab the standard image by mistake,
+and it will simply not appear in this machine's boot picker.
+
+Verify the download before burning — a corrupt ISO wastes a disc and an hour:
+
+```bash
+curl -sO https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing
+```
 
 Burn it to a DVD **as a disc image** — not as a data file. Any burning tool's
-"Burn image to disc" option is correct.
+"Burn image to disc" option is correct. On a Mac:
+
+```bash
+hdiutil burn debian-mac-13.6.0-amd64-netinst.iso
+```
+
+Debian 13 still targets baseline `amd64` (x86-64-**v1**), which is what this
+Xeon 5150 is. That is why Debian works here and Ubuntu 26.04 does not — see the
+runbook's Blocker B.
 
 ---
 
