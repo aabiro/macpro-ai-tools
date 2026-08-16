@@ -84,22 +84,124 @@ before pressing Return.
 ## 3. Boot 1 — verify `Liferaft` actually boots
 
 **Do this before any disk work. Everything downstream assumes it.**
+Nothing here is destructive. You are only proving the safety net works.
 
-1. Startup Manager (§1)
-2. Select **`Liferaft`** → Return
-3. Wait. First boot from a clone is slow — several minutes is normal.
+Budget 20–30 minutes.
 
-**Confirm all of:**
+### 3a. Before you shut down
 
-- [ ] It reaches the desktop
-- [ ] It looks like your system (your files, your wallpaper)
-- [ ] Open Terminal and run `diskutil list` — it responds
+1. **Save your work.** `administrator` is logged in at the console with
+   applications open. Save and quit anything with unsaved documents —
+   Preview, Safari, Terminal, TextEdit.
+2. **Note that remote access drops.** Anyone helping over SSH loses the
+   connection at shutdown and reconnects once the machine is up again.
+3. **Plug in a wired USB keyboard**, directly into the Mac. See §0. This is the
+   step people skip and then spend an hour on.
+4. **Unplug USB sticks** you are not booting from. They slow the picker and add
+   confusing entries.
 
-**If `Liferaft` does not appear in the picker, or does not boot: STOP.** Do not
-start the runbook. Without a working clone there is no safety net, and step 3
-of the runbook erases `disk0`.
+### 3b. Shut down properly
 
-Shut down when satisfied.
+**Apple menu () → Shut Down…** → confirm.
+
+Use Shut Down, not Restart, for this first attempt — a cold start makes the
+Option timing much easier to judge. Wait for the fans to stop completely.
+
+### 3c. Boot into the picker
+
+1. Press the power button
+2. **Immediately** press and hold **Option (⌥)** — before the chime, not after
+3. Hold it. The screen may be black or grey for **15–30 seconds**. Normal.
+4. Release when drive icons appear
+
+### 3d. Choose `Liferaft`
+
+You should see roughly:
+
+```
+   [Macintosh RAID]      [Liferaft]      [Recovery HD]
+```
+
+Use **← →** to highlight **`Liferaft`**, press **Return**.
+
+If `Liferaft` is not there, **stop** and see §3g.
+
+### 3e. Wait
+
+First boot from a clone is slow. A grey screen with a spinning gear for
+**2–5 minutes** is expected. Do not power off. If nothing at all has happened
+after 10 minutes, power off and see §3g.
+
+Log in as you normally would.
+
+### 3f. Confirm you are actually on `Liferaft` — do not skip
+
+**`Liferaft` is a byte-for-byte clone. It will look exactly like your normal
+system — same wallpaper, same files, same everything.** Looking at the desktop
+tells you nothing. You must check.
+
+Open **Terminal** (Applications → Utilities → Terminal) and run:
+
+```bash
+df -h /
+```
+
+| Output shows | Meaning |
+|---|---|
+| `/dev/disk1s2` | ✅ **on `Liferaft`** — the clone boots. This is what you want |
+| `/dev/disk2` | ❌ you booted the normal system. The picker selection did not take — retry §3c |
+
+Confirm the rest:
+
+```bash
+diskutil list          # responds, shows both disks
+ls ~/Documents         # your files are here
+ping -c3 192.168.1.1   # networking works
+```
+
+**Two things that are normal on `Liferaft` and are NOT faults:**
+
+- `g5-config` / `cockpit` / `g5-doctor` are **missing**. The clone was made
+  before the AI kit was installed. Expected. They are on the main system.
+- The volume mounted at `/Volumes/Macintosh RAID` is now your *other* system.
+  Do not modify it here.
+
+### 3g. If `Liferaft` will not boot — STOP
+
+**Do not start the runbook.** Without a working clone there is no safety net,
+and runbook §3 erases `disk0`.
+
+| Symptom | Do this |
+|---|---|
+| No icons ever appear | Keyboard. Wired USB, directly into the Mac, hold Option *before* pressing power |
+| Icons appear, no `Liferaft` | Reset NVRAM (§9) and retry. If still absent, the clone is not blessed — see below |
+| Selected it, grey screen forever | Power off. Boot the normal system. The clone is damaged; re-clone before proceeding |
+| Folder with `?` | No bootable system found. Boot normally, then re-bless (below) |
+
+Re-bless the clone from the **normal** system:
+
+```bash
+sudo bless --folder "/Volumes/Liferaft/System/Library/CoreServices" --bootefi
+```
+
+Then retry §3c. If it still will not boot, re-make the clone with Disk Utility
+(Restore tab, source = your system, destination = `Liferaft`) before continuing.
+
+### 3h. Return to normal
+
+Boot 1 is only a verification. When satisfied:
+
+**Apple menu () → Restart**, hold **Option**, choose **`Macintosh RAID`**.
+
+Confirm you are back:
+
+```bash
+df -h /                    # expect /dev/disk2
+g5-config show             # the AI kit is here again
+```
+
+✅ **Boot 1 passes when `Liferaft` booted and `df -h /` showed `/dev/disk1s2`.**
+You are cleared for Boot 2.
 
 ---
 
