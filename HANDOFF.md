@@ -253,12 +253,36 @@ new owner actually benefits from.
 
 ---
 
-## 6. Privacy status — ACTION REQUIRED BEFORE SHIPPING
+## 6. Privacy status — NO SCRUB. THE RECIPIENT OWNS THIS DATA.
 
-This is the one item that is **not** complete, and it needs an administrator
-password.
+**Superseded.** This section originally called for wiping the `administrator`
+account before handover. That was wrong for this handover and the instruction
+is withdrawn.
 
-The `administrator` account contains real personal data:
+The machine is going to the person who owns that account. Their files are not
+"previous owner data to be removed" — they are the recipient's own files, and
+`Liferaft` is their backup. **Do not run `kit/scrub/scrub.sh`.**
+
+Keep as-is:
+
+- `/Users/administrator/` — all of it
+- `/Volumes/Liferaft` — their system backup (until the Linux install consumes
+  that disk, which is a decision they make in the runbook)
+- Shell history, application settings, everything else
+
+The only genuinely optional item is the operator SSH key in
+`/Users/ai-cockpit/.ssh/authorized_keys`. It grants remote access to whoever
+set up the automation. Keep it for continued remote help, or
+`rm` it for full independence. Reversible either way.
+
+`scrub.sh` is retained in the kit for a future handover to a *different*
+person. It previews by default and requires typing `YES`, so it cannot fire by
+accident — but it should not be run now.
+
+### For reference, what the account contains
+
+(Recorded during the audit, before the recipient was identified. Left here
+because it documents what is being *preserved*.)
 
 ```
 Desktop      66 entries
@@ -270,21 +294,9 @@ CompudataLINK, Sites, projects, Applications
 ```
 
 All are mode `drwx------`, owned by `administrator`. The automation account
-(`ai-cockpit`) is not an administrator and has no `sudo`, so this data could
-not be read, archived, or deleted — correctly, since that boundary is what
-stops an automation account from touching another user's private files.
-
-**A ready-to-run script is provided at `kit/scrub/scrub.sh`.** It previews
-everything first and requires explicit confirmation. Run it from an
-administrator account before the machine leaves.
-
-Also pending, and included in that script:
-
-- `~/.ssh/authorized_keys` on `ai-cockpit` still holds the previous owner's
-  public key, which would grant them SSH access to the machine after handover.
-- Shell history on both accounts.
-- The old prototype scripts in `/Users/ai-cockpit/` that reference the previous
-  owner's Tailscale address.
+(`ai-cockpit`) is not an administrator and has no `sudo`, so it could not read
+them — correctly, since that boundary is what stops an automation account from
+touching another user's private files. **That data stays exactly where it is.**
 
 ---
 

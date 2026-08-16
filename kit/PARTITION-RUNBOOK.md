@@ -8,6 +8,12 @@ disk0 (Samsung HD103SI, 1 TB)   150 GB  El Capitan
 disk1 (Seagate ST31000333AS)    1 TB     Linux
 ```
 
+> **The physical boot procedure for every step below is in
+> [`BOOT-STEPS.md`](BOOT-STEPS.md)** — how to reach the Startup Manager, what
+> each icon means, and what to do when the picker misbehaves. Read it first if
+> you have not used this machine's boot picker before. The single most common
+> failure is a Bluetooth keyboard, which never registers the Option key.
+
 This runbook is written to be followed in order. **The ordering is the part
 that matters** — get it wrong and you destroy your only copy of Lion. Read §1
 before touching anything.
@@ -215,8 +221,13 @@ Only after §5 passed.
 Follow [`linux/LINUX-STARTER-PACK.md`](linux/LINUX-STARTER-PACK.md), which
 covers the `EFI32` boot problem in detail. In short:
 
-- Burn the installer to a **DVD**, not USB. This machine has a working burner,
-  and DVD boot uses the legacy BIOS path that sidesteps the 32-bit EFI problem.
+- **The USB stick is already written and verified** with
+  `debian-mac-13.6.0-amd64-netinst` — the Mac-specific image carrying a 32-bit
+  EFI bootloader, which is what makes it bootable here. Checksum confirmed
+  byte-for-byte off the stick.
+- If the USB does not appear in the picker, burn the DVD instead — the optical
+  path is the most reliable on this machine:
+  `/Users/Shared/ai-cockpit/linux/burn-installer.sh`
 - Boot holding **Option**, choose the disc (it may be labelled "Windows" — that
   is the generic non-Apple icon and is expected).
 - At partitioning, select **`disk1`** — verify by model (ST31000333AS) and size.

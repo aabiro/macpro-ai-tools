@@ -175,26 +175,19 @@ run continuously.
 
 ---
 
-## Phase 5 — Privacy scrub · **BLOCKED — needs an admin password**
+## Phase 5 — Privacy scrub · **WITHDRAWN — the recipient owns this data**
 
-**Goal:** nothing of the previous owner leaves with the machine.
+**Superseded.** This phase assumed the machine was going to a stranger. It is
+going to the person who owns the `administrator` account, so their files are
+not data to be removed — they are the point.
 
-This is the one phase that is genuinely incomplete, and it is a hard permission
-boundary rather than an oversight.
+`kit/scrub/scrub.sh` is retained for a future handover to a *different* person.
+It previews by default and requires typing `YES`, so it cannot fire by accident.
+**Do not run it now.**
 
-`/Users/administrator/` holds real personal data — Desktop (66 items),
-Downloads (382), Documents (22), Trash (18), `.ssh/`, and project folders — all
-mode `drwx------`. The automation account is not an administrator and has no
-`sudo`, so that data cannot be read, archived, or deleted. That boundary
-working correctly is a feature, not a bug.
-
-Also outstanding: `ai-cockpit`'s `authorized_keys` still contains the previous
-owner's public key, which would grant them SSH access *after* handover.
-
-Delivered: `kit/scrub/scrub.sh` — previews everything, requires explicit
-confirmation, offers to archive before deleting.
-
-**This must be run from an administrator account before the machine ships.**
+The only optional item is `ai-cockpit`'s `authorized_keys`, which grants the
+automation operator remote access. Keep it for continued remote help, remove it
+for independence. Reversible either way.
 
 ---
 
@@ -239,5 +232,5 @@ Before the machine leaves:
 - [x] New owner's README on the machine
 - [x] Linux starter pack + bootstrap on the machine
 - [x] No hardcoded reference to the previous owner's network in the shipped kit
-- [ ] **`kit/scrub/scrub.sh` run from an admin account** ← the remaining item
-- [ ] Previous owner's `authorized_keys` removed (part of the scrub)
+- [x] Recipient's data preserved intact (no scrub — they own it)
+- [ ] Runbook executed (physical, attended — see `kit/BOOT-STEPS.md`)

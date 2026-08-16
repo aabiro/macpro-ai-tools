@@ -7,21 +7,30 @@ genuinely useful machine — with AI tooling that works for *them*.
 
 | If you are… | Read |
 |---|---|
-| Handing the machine over | [`HANDOFF.md`](HANDOFF.md) — machine truth, verified state, **and the one action still outstanding** |
+| Handing the machine over | [`HANDOFF.md`](HANDOFF.md) — machine truth and verified state |
 | Wanting the full build plan | [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) — phased, with what was dropped and why |
 | The new owner | [`kit/macos-lion/README.md`](kit/macos-lion/README.md) — also installed on the machine at `/Users/Shared/ai-cockpit/README.md` |
 | Installing Linux on it | [`kit/linux/LINUX-STARTER-PACK.md`](kit/linux/LINUX-STARTER-PACK.md) |
+| **Doing the disk work** | [`kit/PARTITION-RUNBOOK.md`](kit/PARTITION-RUNBOOK.md) + [`kit/BOOT-STEPS.md`](kit/BOOT-STEPS.md) |
 
-## ⚠ Outstanding before the machine ships
+## ⚠ Do NOT run the privacy scrub
 
-`kit/scrub/scrub.sh` **has not been run.** The previous owner's personal data
-and SSH key are still on the machine. It needs an administrator password, which
-the automation account does not have. See `HANDOFF.md` §6.
+`kit/scrub/scrub.sh` exists but **must not be run on this handover.**
+
+The machine is going to the person who owns the `administrator` account. Their
+Desktop, Documents, Downloads, projects, and `Liferaft` backup are *their own
+files* — deleting them is the opposite of what this handover needs.
+
+The script is kept only for a future handover to a *different* person. If that
+day comes, read `HANDOFF.md` §6 first.
+
+The one thing worth considering now is the operator SSH key in
+`/Users/ai-cockpit/.ssh/authorized_keys`, which grants remote access to whoever
+set up the automation. Keep it if you want to keep helping remotely; remove it
+if the machine should be fully independent:
 
 ```bash
-/Users/Shared/ai-cockpit/scrub/scrub.sh                          # preview
-/Users/Shared/ai-cockpit/scrub/scrub.sh --archive /Volumes/USB   # save first
-/Users/Shared/ai-cockpit/scrub/scrub.sh --apply                  # delete
+rm /Users/ai-cockpit/.ssh/authorized_keys      # optional, reversible
 ```
 
 ## The problem this package solves
