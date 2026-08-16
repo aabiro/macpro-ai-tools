@@ -1,9 +1,13 @@
 import sys
 import base64
 import subprocess
-from mcp.server.fastmcp import FastMCP
+try:
+    # mcp >= 2.0: FastMCP was renamed MCPServer and moved
+    from mcp.server.mcpserver import MCPServer
+except ImportError:  # pragma: no cover - mcp 1.x fallback
+    from mcp.server.fastmcp import FastMCP as MCPServer
 
-mcp = FastMCP("MacPro G5 Controller")
+mcp = MCPServer("MacPro G5 Controller")
 
 SSH_TARGET = "macpro"
 SSH_USER = "ai-cockpit"
