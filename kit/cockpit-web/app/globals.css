@@ -1,0 +1,136 @@
+/*
+ * Terminal-adjacent, but a real web UI rather than a novelty.
+ * Light and dark both supported; the default follows the viewer's system.
+ */
+
+:root {
+  --bg: #f7f7f5;
+  --panel: #ffffff;
+  --ink: #1b1d1e;
+  --dim: #6b7280;
+  --line: #e2e2df;
+  --accent: #0f7b6c;
+  --accent-ink: #ffffff;
+  --user: #1d4ed8;
+  --warn: #b45309;
+  --bad: #b91c1c;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1011;
+    --panel: #17191b;
+    --ink: #e6e6e3;
+    --dim: #9aa0a6;
+    --line: #2a2d30;
+    --accent: #2dd4a7;
+    --accent-ink: #06231d;
+    --user: #7aa2ff;
+    --warn: #f0b429;
+    --bad: #ff6b6b;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.wrap { max-width: 980px; margin: 0 auto; padding: 24px 20px 60px; }
+
+.head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 20px;
+}
+.head h1 {
+  margin: 0; font-family: var(--mono); font-size: 22px;
+  letter-spacing: 3px; font-weight: 600;
+}
+.sub { margin: 4px 0 0; color: var(--dim); font-size: 13px; }
+.hstat { display: flex; align-items: center; gap: 8px; }
+
+.pill {
+  display: inline-block; padding: 3px 10px; border-radius: 999px;
+  border: 1px solid var(--line); font-size: 12px; color: var(--dim);
+  white-space: nowrap;
+}
+.pill.ok { border-color: var(--accent); color: var(--accent); }
+.pill.bad { border-color: var(--bad); color: var(--bad); }
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 18px; flex-wrap: wrap; }
+.tabs button {
+  background: none; border: 0; border-bottom: 2px solid transparent;
+  padding: 9px 14px; font: inherit; font-size: 14px; color: var(--dim);
+  cursor: pointer; border-radius: 6px 6px 0 0;
+}
+.tabs button:hover { color: var(--ink); }
+.tabs button.on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+
+select, button, textarea, input {
+  font: inherit; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px;
+}
+button {
+  cursor: pointer; background: var(--accent); color: var(--accent-ink);
+  border-color: transparent; font-weight: 600;
+}
+button:disabled { opacity: .45; cursor: not-allowed; }
+.tabs button, .row button:not(:first-child) { font-weight: inherit; }
+.row { display: flex; align-items: center; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
+
+textarea { width: 100%; resize: vertical; }
+.mono, pre, code { font-family: var(--mono); font-size: 13px; }
+
+.hint { color: var(--dim); font-size: 13.5px; margin: 0 0 12px; }
+code { background: rgba(127,127,127,.14); padding: 1px 5px; border-radius: 4px; }
+
+.out {
+  background: rgba(127,127,127,.08); border: 1px solid var(--line);
+  border-radius: 8px; padding: 12px; white-space: pre-wrap; word-break: break-word;
+  max-height: 460px; overflow: auto; margin-top: 12px;
+}
+
+.alert {
+  background: rgba(240,180,41,.12); border: 1px solid var(--warn);
+  border-radius: 8px; padding: 12px 14px; margin: 12px 0; font-size: 14px;
+}
+.alert pre { margin: 8px 0 0; white-space: pre-wrap; }
+
+/* chat */
+.chat { display: flex; flex-direction: column; gap: 12px; }
+.log { min-height: 260px; max-height: 52vh; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.msg { display: flex; gap: 12px; }
+.msg .who {
+  font-family: var(--mono); font-size: 11px; color: var(--dim);
+  min-width: 30px; padding-top: 3px; letter-spacing: 1px;
+}
+.msg.user .who { color: var(--user); }
+.msg .body { white-space: pre-wrap; word-break: break-word; flex: 1; }
+.msg.user .body { color: var(--user); }
+.blink { color: var(--dim); animation: pulse 1.1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .4; } }
+
+.composer { display: flex; gap: 10px; align-items: flex-end; }
+.composer textarea { flex: 1; }
+
+.tool { display: flex; flex-direction: column; }
+.tool h2 { font-size: 15px; margin: 18px 0 8px; }
+.tool h2:first-child { margin-top: 0; }
+.tool button { align-self: flex-start; margin-top: 10px; }
+.tool .row button { margin-top: 0; }
+
+.kv { border-collapse: collapse; width: 100%; font-size: 14px; }
+.kv td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.kv td:first-child { color: var(--dim); width: 38%; }
+
+@media (max-width: 620px) {
+  .composer { flex-direction: column; align-items: stretch; }
+  .kv td:first-child { width: 45%; }
+}
