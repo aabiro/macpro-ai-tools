@@ -310,6 +310,54 @@ def g5_job_status(job_name: str, log_lines: int = 25) -> str:
 
 
 @mcp.tool()
+def g5_job_progress(process_name: str = "ditto", job_name: str = "") -> str:
+    """
+    Real progress for a long file-copy job, by tree position rather than bytes.
+
+    Byte counts are actively misleading for ditto: it writes replacements before
+    removing stale files, so the destination churns and can EXCEED the source
+    mid-run. Twice during a live clone that made a job look ~complete when it had
+    tens of gigabytes still to write.
+
+    What actually tells you where you are is which file the process has open.
+    ditto walks the tree in order, so a path of
+    /Users/someone/Movies/... means it is well past Desktop, Documents,
+    Downloads and Library, and has Music, Pictures and the rest still to come.
+
+    Also reports whether the process is CPU-bound or disk-bound: low CPU with
+    open descriptors means it is writing large files, not stalling. And note
+    ditto has NO delta transfer -- if metadata differs it re-copies the whole
+    file, so a "sync" of an already-similar volume can still move real bulk.
+    """
+    proc = shlex.quote(process_name)
+    parts = [
+        # pgrep does not exist on Lion; ps + grep is the portable form here.
+        f"PID=$(ps -axo pid,comm 2>/dev/null | grep {proc} | grep -v grep "
+        f"| awk '{{print $1}}' | head -1); "
+        f'if [ -z "$PID" ]; then echo "no {process_name} process running"; else '
+        f'echo "--- process ---"; '
+        f"ps -axo pid,etime,pcpu,rss,comm 2>/dev/null | grep \"^ *$PID\" ; "
+        f'echo; echo "--- current position in the tree (this is the real progress) ---"; '
+        f"sudo -n lsof -p \"$PID\" 2>/dev/null | awk '$4 ~ /[0-9]+r|[0-9]+w/ {{print \"  \" $NF}}' "
+        f"| grep -vE '^\\s*(/dev|/usr/lib|/usr/bin|/System/Library/(Frameworks|PrivateFrameworks))' "
+        f"| tail -8; "
+        f'echo; echo "--- CPU-bound or disk-bound? ---"; '
+        f"C=$(ps -axo pcpu,comm 2>/dev/null | grep {proc} | grep -v grep | awk '{{print int($1)}}' | head -1); "
+        f'if [ "${{C:-0}}" -gt 25 ]; then echo "  cpu ${{C}}% - walking/comparing many small files"; '
+        f'else echo "  cpu ${{C}}% - disk-bound, writing large files"; fi; fi'
+    ]
+    if job_name:
+        safe = "".join(c for c in job_name if c.isalnum() or c in "-_")
+        parts.append(
+            f'; echo; echo "--- job log ---"; '
+            f'if grep -q "### G5JOB DONE" {shlex.quote(JOB_DIR + "/" + safe + ".log")} 2>/dev/null; '
+            f'then echo "  COMPLETE"; else echo "  no completion marker yet"; fi; '
+            f'tail -4 {shlex.quote(JOB_DIR + "/" + safe + ".log")} 2>/dev/null | sed "s/^/  /"'
+        )
+    return run_ssh_command("".join(parts), timeout=100)
+
+
+@mcp.tool()
 def g5_privileges() -> str:
     """
     Report what this session can and cannot do, so calls are not wasted
