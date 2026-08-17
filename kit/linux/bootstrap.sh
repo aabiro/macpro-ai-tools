@@ -351,6 +351,53 @@ UNIT
 fi
 
 # ---------------------------------------------------------------------------
+# 7b. The machine's own documentation and health tool
+# ---------------------------------------------------------------------------
+step "Machine documentation and health tool"
+
+# macpro-doctor: the Linux successor to Lion's g5-doctor. It reports far more,
+# because Lion had no smartctl -- there SMART was a single pass/fail word.
+DOC_SRC=""
+for c in "./macpro-doctor" "$(dirname "$0")/macpro-doctor"; do
+    [ -f "$c" ] && { DOC_SRC="$c"; break; }
+done
+if [ -n "$DOC_SRC" ]; then
+    run $SUDO install -m 755 "$DOC_SRC" /usr/local/bin/macpro-doctor \
+        && ok "installed macpro-doctor (run: sudo macpro-doctor)"
+else
+    skip "macpro-doctor not found next to this script"
+fi
+
+# Docs travel with the machine. /usr/local/share/doc is the correct home for
+# locally-installed documentation under the FHS.
+DOCDIR="/usr/local/share/doc/macpro"
+FOUND_DOCS=0
+for d in ./*.md "$(dirname "$0")"/*.md "$(dirname "$0")"/../docs/*.md; do
+    [ -f "$d" ] || continue
+    [ "$FOUND_DOCS" = "0" ] && run $SUDO mkdir -p "$DOCDIR"
+    run $SUDO install -m 644 "$d" "$DOCDIR/" && FOUND_DOCS=$((FOUND_DOCS + 1))
+done
+
+# The Lion partition still holds the full kit. Pull the docs across if it is
+# mounted -- HFS+ reads fine on Linux, so nothing is lost in the migration.
+for hfs in /mnt/Lion /media/*/Lion "/media/$TARGET_USER/Lion"; do
+    [ -d "$hfs/Users/Shared/ai-cockpit/docs" ] || continue
+    run $SUDO mkdir -p "$DOCDIR"
+    run $SUDO cp -n "$hfs/Users/Shared/ai-cockpit/docs/"*.md "$DOCDIR/" 2>/dev/null
+    ok "recovered docs from the Lion partition at $hfs"
+    break
+done
+
+if [ "$FOUND_DOCS" -gt 0 ] || [ -d "$DOCDIR" ]; then
+    ok "docs in $DOCDIR"
+    say "    $(ls "$DOCDIR" 2>/dev/null | tr '\n' ' ')"
+else
+    skip "no docs found to install"
+    say "    They are on the Lion partition: /Users/Shared/ai-cockpit/docs/"
+    say "    Mount it and re-run, or copy them by hand."
+fi
+
+# ---------------------------------------------------------------------------
 # 8. Old-hardware tuning
 # ---------------------------------------------------------------------------
 if [ "$DO_TUNING" = "1" ]; then
@@ -371,10 +418,27 @@ SYSCTL
         run $SUDO sysctl --system >/dev/null && ok "sysctl tuning applied"
     fi
 
-    # SMART monitoring: both drives are ~2009-era and past service life.
-    apt_install smartmontools
+    # Hardware telemetry. Lion could only report SMART as a pass/fail word;
+    # here we can read the numbers that actually predict a failure.
+    apt_install smartmontools lm-sensors dmidecode
+
+    # The FB-DIMM memory controller driver. Without it a failing DIMM gives no
+    # warning at all until it panics -- and FB-DIMM failure is the single most
+    # common way this model dies.
+    if [ "$DRY_RUN" = "1" ]; then
+        say "    would load i5000_edac (FB-DIMM ECC monitoring)"
+    else
+        if $SUDO modprobe i5000_edac 2>/dev/null; then
+            ok "i5000_edac loaded -- ECC errors will now be counted"
+            grep -q "^i5000_edac" /etc/modules 2>/dev/null || \
+                echo "i5000_edac" | $SUDO tee -a /etc/modules >/dev/null
+        else
+            skip "i5000_edac not available (expected if this is not a Mac Pro 1,1)"
+        fi
+    fi
+
     if have smartctl; then
-        ok "smartctl available -- check drives with: sudo smartctl -a /dev/sda"
+        ok "smartctl available -- both drives are ~2009-era, check them"
         say "    Watch: Reallocated_Sector_Ct, Current_Pending_Sector, Power_On_Hours"
     fi
 

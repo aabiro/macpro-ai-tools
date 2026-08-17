@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+#
+# macpro-doctor -- hardware health for a Mac Pro 1,1 running Linux.
+#
+# The Linux successor to g5-doctor. It reports considerably more than the Lion
+# version could, because Lion had no smartctl: there, SMART was a single
+# pass/fail word. Here you get power-on hours, reallocated sectors, and pending
+# sectors -- the numbers that actually tell you whether a 2009 drive is dying.
+#
+#     macpro-doctor              full report
+#     macpro-doctor --brief      one-screen summary
+#     macpro-doctor --ai         pipe the report to an AI for interpretation
+#
+# Needs root for SMART data:  sudo macpro-doctor
+#
+set -uo pipefail
+
+BRIEF=0; AI=0
+for a in "$@"; do
+    case "$a" in
+        --brief) BRIEF=1 ;;
+        --ai)    AI=1 ;;
+        -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    esac
+done
+
+if [ -t 1 ] && [ "$AI" = "0" ]; then
+    B=$'\033[1m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; Z=$'\033[0m'
+else
+    B=""; G=""; Y=""; R=""; Z=""
+fi
+
+SUDO=""; [ "$(id -u)" != "0" ] && command -v sudo >/dev/null && SUDO="sudo"
+have() { command -v "$1" >/dev/null 2>&1; }
+hdr()  { printf '\n%s=== %s ===%s\n' "$B" "$*" "$Z"; }
+
+WARNINGS=()
+warn() { WARNINGS+=("$*"); }
+
+# ---------------------------------------------------------------------------
+hdr "Machine"
+# ---------------------------------------------------------------------------
+if have dmidecode; then
+    $SUDO dmidecode -t system 2>/dev/null | grep -E "Manufacturer|Product Name|Serial" \
+        | sed 's/Serial Number:.*/Serial Number: (redacted)/' | sed 's/^/  /'
+fi
+printf '  Kernel      : %s\n' "$(uname -r)"
+printf '  Distro      : %s\n' "$( . /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-unknown}")"
+printf '  Uptime      : %s\n' "$(uptime -p 2>/dev/null || uptime)"
+
+# ---------------------------------------------------------------------------
+hdr "CPU"
+# ---------------------------------------------------------------------------
+grep -m1 "model name" /proc/cpuinfo | sed 's/.*: /  Model       : /'
+printf '  Cores       : %s\n' "$(nproc)"
+printf '  Load        : %s\n' "$(cut -d' ' -f1-3 /proc/loadavg)"
+
+# The Xeon 5150 is x86-64-v1. Distros moving to a v2 baseline will not run.
+if grep -qm1 " sse4_2 " /proc/cpuinfo || grep -qm1 "sse4_2" /proc/cpuinfo; then
+    printf '  Baseline    : x86-64-v2 or better\n'
+else
+    printf '  Baseline    : %sx86-64-v1 (no SSE4.2/POPCNT)%s\n' "$Y" "$Z"
+    printf '                Stay on Debian or another v1-compatible distro.\n'
+fi
+
+# ---------------------------------------------------------------------------
+hdr "Memory (FB-DIMM -- the most common failure on this model)"
+# ---------------------------------------------------------------------------
+free -h | sed 's/^/  /'
+if have dmidecode; then
+    echo
+    $SUDO dmidecode -t memory 2>/dev/null \
+        | awk '/Memory Device/,0' \
+        | grep -E "Size:|Locator:|Speed:|Type:" \
+        | grep -v "No Module Installed" | sed 's/^/  /' | head -30
+fi
+
+# ECC errors are the early warning. EDAC exposes them if the driver loaded.
+if [ -d /sys/devices/system/edac/mc ]; then
+    echo
+    echo "  ECC error counters:"
+    total_ce=0; total_ue=0; found_mc=0
+    for mc in /sys/devices/system/edac/mc/mc*; do
+        [ -d "$mc" ] || continue
+        found_mc=1
+        ce=$(cat "$mc/ce_count" 2>/dev/null || echo 0)
+        ue=$(cat "$mc/ue_count" 2>/dev/null || echo 0)
+        printf '    %s: correctable=%s uncorrectable=%s\n' "$(basename "$mc")" "$ce" "$ue"
+        total_ce=$((total_ce + ce)); total_ue=$((total_ue + ue))
+    done
+    if [ "$found_mc" = "0" ]; then
+        echo "    (no memory controllers registered)"
+        echo "    On this machine the driver is i5000_edac:  sudo modprobe i5000_edac"
+        echo "    Without it, a failing FB-DIMM gives no warning until it panics."
+    fi
+    [ "$total_ce" -gt 0 ] && warn "ECC has corrected $total_ce error(s) -- a DIMM is starting to fail"
+    [ "$total_ue" -gt 0 ] && warn "ECC UNCORRECTABLE errors ($total_ue) -- replace the failing DIMM now"
+else
+    echo "  (EDAC not loaded -- try: sudo modprobe i5000_edac)"
+fi
+
+# ---------------------------------------------------------------------------
+hdr "Disks -- real SMART attributes"
+# ---------------------------------------------------------------------------
+if ! have smartctl; then
+    echo "  smartctl not installed.  sudo apt install smartmontools"
+elif [ "$(id -u)" != "0" ] && [ -z "$SUDO" ]; then
+    echo "  SMART data needs root.  Re-run as:  sudo macpro-doctor"
+else
+    if [ "$(id -u)" != "0" ]; then
+        echo "  (reading SMART via sudo -- you may be prompted)"
+    fi
+    for dev in /dev/sd?; do
+        [ -b "$dev" ] || continue
+        model=$($SUDO smartctl -i "$dev" 2>/dev/null | awk -F': *' '/Device Model|Model Number/{print $2; exit}')
+        health=$($SUDO smartctl -H "$dev" 2>/dev/null | grep -iE "overall-health|SMART Health" | awk -F': *' '{print $2}')
+        printf '\n  %s%s%s  (%s)\n' "$B" "$dev" "$Z" "${model:-unknown}"
+        printf '    health            : %s\n' "${health:-unknown}"
+        case "$health" in *PASSED*|*OK*) ;; *) warn "$dev SMART health is '$health' -- back up now" ;; esac
+
+        $SUDO smartctl -A "$dev" 2>/dev/null | awk '
+          /Power_On_Hours/      {printf "    power-on hours    : %s (%.1f years)\n", $10, $10/8760}
+          /Reallocated_Sector/  {printf "    reallocated sectors: %s\n", $10; if ($10+0>0) print "      ^ non-zero: the drive is remapping bad sectors"}
+          /Current_Pending_Sector/ {printf "    pending sectors   : %s\n", $10; if ($10+0>0) print "      ^ non-zero: sectors failing to read"}
+          /Offline_Uncorrectable/  {printf "    uncorrectable     : %s\n", $10}
+          /Temperature_Celsius/ {printf "    temperature       : %s C\n", $10}
+        '
+        ra=$($SUDO smartctl -A "$dev" 2>/dev/null | awk '/Reallocated_Sector/{print $10}')
+        pe=$($SUDO smartctl -A "$dev" 2>/dev/null | awk '/Current_Pending_Sector/{print $10}')
+        [ "${ra:-0}" -gt 0 ] 2>/dev/null && warn "$dev has $ra reallocated sector(s) -- ageing, plan replacement"
+        [ "${pe:-0}" -gt 0 ] 2>/dev/null && warn "$dev has $pe pending sector(s) -- failing, replace it"
+    done
+fi
+
+echo
+df -h -x tmpfs -x devtmpfs 2>/dev/null | sed 's/^/  /'
+
+# ---------------------------------------------------------------------------
+hdr "Thermals and fans"
+# ---------------------------------------------------------------------------
+if have sensors; then
+    sensors 2>/dev/null | sed 's/^/  /'
+else
+    echo "  lm-sensors not installed.  sudo apt install lm-sensors && sudo sensors-detect"
+fi
+[ -d /sys/class/thermal ] && for z in /sys/class/thermal/thermal_zone*; do
+    [ -r "$z/temp" ] || continue
+    printf '  %s: %s C\n' "$(basename "$z")" "$(( $(cat "$z/temp") / 1000 ))"
+done
+
+# ---------------------------------------------------------------------------
+hdr "Errors in the log"
+# ---------------------------------------------------------------------------
+if have journalctl; then
+    n=$($SUDO journalctl -p err -b --no-pager 2>/dev/null | wc -l)
+    printf '  %s error-level entries this boot\n' "$n"
+    [ "$BRIEF" = "0" ] && $SUDO journalctl -p err -b --no-pager 2>/dev/null | tail -12 | sed 's/^/    /'
+fi
+mce=$(grep -ciE "machine check|mce:" /var/log/kern.log 2>/dev/null || echo 0)
+[ "$mce" -gt 0 ] && warn "$mce machine-check event(s) in kern.log -- CPU or memory fault"
+
+# ---------------------------------------------------------------------------
+hdr "Verdict"
+# ---------------------------------------------------------------------------
+if [ ${#WARNINGS[@]} -eq 0 ]; then
+    printf '  %sNo faults detected.%s\n' "$G" "$Z"
+else
+    printf '  %s%d issue(s) need attention:%s\n' "$R" "${#WARNINGS[@]}" "$Z"
+    for w in "${WARNINGS[@]}"; do printf '    - %s\n' "$w"; done
+fi
+
+cat <<'EOF'
+
+  Known ageing points on a Mac Pro 1,1 (2006), regardless of what is above:
+    - FB-DIMMs run hot and are the most common failure. Watch ECC counters.
+    - The PSU's electrolytic capacitors age; symptoms are random shutdowns.
+    - Nineteen years of dust chokes the heatsinks. Open it and blow it out.
+    - Both drives are past typical service life. Keep backups off this machine.
+EOF
+
+if [ "$AI" = "1" ]; then
+    :
+elif have claude || have gemini; then
+    echo
+    echo "  Have an AI interpret this:   macpro-doctor --ai | claude -p 'Diagnose this Mac Pro'"
+fi
