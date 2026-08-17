@@ -79,6 +79,9 @@ def run_ssh_command(cmd: str, stdin_data: str = None, timeout: int = DEFAULT_TIM
     still having said something worth reading. stderr is always included,
     because the interesting part of a macOS failure is usually there.
     """
+    # Lion's perl emits four lines of locale warnings on many commands, which
+    # pollutes every result and once buried a real error. Pin the locale.
+    cmd = "export LC_ALL=C LANG=C; " + cmd
     ssh_cmd = ["ssh"] + SSH_OPTS + [SSH_TARGET, cmd]
     try:
         # text=True means subprocess handles the encoding. Passing pre-encoded
@@ -401,6 +404,136 @@ def g5_verify_copy(source_path: str, dest_path: str) -> str:
         f"hdiutil imageinfo {d} 2>&1 | grep -iE 'Format:|Checksum Type' | head -3;; esac",
         timeout=100,
     )
+
+
+@mcp.tool()
+def g5_disk_layout() -> str:
+    """
+    Report the partition layout with the two rules that actually govern it.
+
+    Rule 1: an HFS+ volume can only grow into free space that FOLLOWS it on
+    disk. Free space *before* a volume is unreachable to it. Reclaiming it means
+    physically moving the volume - repartition plus a full restore, hours of
+    work - so check the on-disk ORDER before promising anyone a merge.
+
+    Rule 2: `diskutil mergePartitions` preserves the FIRST partition in the
+    range and destroys the rest. Merging an empty volume that precedes your
+    system volume therefore erases the system. Read the order, not the names.
+    """
+    return run_ssh_command(
+        # Lion's diskutil list takes at most ONE device. Passing two returns
+        # empty output with no error, which reads as "no partitions" and is
+        # badly misleading. Call it bare, which lists everything.
+        "echo '--- on-disk order (this is what determines what can grow) ---'; "
+        "diskutil list 2>/dev/null | grep -E '^/dev|Apple_HFS|EFI |Apple_RAID|Apple_Boot|GUID'; "
+        "echo; echo '--- usage ---'; df -h | grep -E '^/dev'; "
+        "echo; echo '--- growth headroom per volume ---'; "
+        "for d in disk0s2 disk0s3 disk0s4 disk1s2; do "
+        "  n=$(diskutil info $d 2>/dev/null | awk -F': *' '/Volume Name/{print $2}'); "
+        "  [ -z \"$n\" ] && continue; "
+        "  cur=$(diskutil resizeVolume $d limits 2>/dev/null | awk '/Current size/{print $3, $4}'); "
+        "  max=$(diskutil resizeVolume $d limits 2>/dev/null | awk '/Maximum size/{print $3, $4}'); "
+        "  if [ -n \"$cur\" ]; then "
+        "    if [ \"$cur\" = \"$max\" ]; then echo \"  $d $n: at maximum ($cur) - no free space follows it\"; "
+        "    else echo \"  $d $n: $cur, can grow to $max\"; fi; "
+        "  else echo \"  $d $n: not resizable (RAID member, or not HFS+)\"; fi; "
+        "done; "
+        "echo; echo '--- EFI partition ---'; "
+        "echo '  ~210 MB, created automatically by any GUID partitioning.'; "
+        "echo '  Not removable in practice: diskutil recreates it and removing'; "
+        "echo '  it risks bootability. Leave it alone.'",
+        timeout=100,
+    )
+
+
+@mcp.tool()
+def g5_patch_bootloader(volume: str, efi_source: str, expect_sha1: str = "") -> str:
+    """
+    Install a patched boot.efi onto a volume, handling the two traps that make
+    this silently fail.
+
+    Trap 1: install-media boot.efi carries the `uchg` immutable flag, which
+    blocks overwrite even as root. cp fails with "Operation not permitted" and
+    the reason is not obvious. Cleared here first.
+
+    Trap 2: `bless --bootefi` re-copies boot.efi from the target volume's
+    /usr/standalone/i386/boot.efi. Patch only CoreServices and the next bless
+    silently reverts you to the stock loader - which is how a verified 32-bit
+    patch got replaced seconds after installation, leaving media that would not
+    boot. BOTH locations are patched here.
+
+    Pass expect_sha1 to have the result verified; strongly recommended, since a
+    wrong bootloader is indistinguishable from a correct one until boot fails.
+    """
+    v = shlex.quote(volume.rstrip("/"))
+    src = shlex.quote(efi_source)
+    exp = shlex.quote(expect_sha1)
+    return run_ssh_command(
+        f"V={v}; SRC={src}; EXP={exp}; "
+        f'[ -f "$SRC" ] || {{ echo "ERROR: source $SRC not found"; exit 1; }}; '
+        f'CS="$V/System/Library/CoreServices/boot.efi"; '
+        f'SA="$V/usr/standalone/i386/boot.efi"; '
+        f'echo "--- before ---"; '
+        f'for t in "$CS" "$SA"; do [ -f "$t" ] && echo "  $(shasum -a 1 "$t" | cut -c1-40)  $(stat -f %z "$t") bytes  $t"; done; '
+        f'echo "--- patching both locations ---"; '
+        f'for t in "$CS" "$SA"; do '
+        f'  [ -e "$(dirname "$t")" ] || {{ echo "  skip (no dir): $t"; continue; }}; '
+        f'  sudo -n chflags nouchg "$t" 2>/dev/null; '
+        f'  sudo -n cp "$SRC" "$t" && sudo -n chmod 644 "$t" && sudo -n chown root:wheel "$t" '
+        f'    && echo "  patched $t" || echo "  FAILED $t"; '
+        f'done; '
+        f'echo "--- after ---"; OK=1; '
+        f'for t in "$CS" "$SA"; do '
+        f'  [ -f "$t" ] || continue; G=$(shasum -a 1 "$t" | awk "{{print \\$1}}"); '
+        f'  if [ -n "$EXP" ] && [ "$G" != "$EXP" ]; then echo "  MISMATCH $t ($G)"; OK=0; '
+        f'  else echo "  ok $G  $t"; fi; done; '
+        f'[ "$OK" = "1" ] && echo "RESULT: both locations carry the patch" '
+        f'  || echo "RESULT: VERIFICATION FAILED - do not boot this"; '
+        f'echo; echo "NOTE: if you bless this volume, do NOT pass --bootefi, or run"; '
+        f'echo "      this tool again afterwards and re-verify."',
+        timeout=110,
+    )
+
+
+@mcp.tool()
+def g5_clone_volume(source: str, dest: str, job_name: str = "clone") -> str:
+    """
+    Clone a live, mounted volume to another volume, detached.
+
+    Uses `ditto -X` rather than asr. asr block-copy requires a read-only
+    source - Apple's own man page says "one cannot erase blockcopy the root
+    filesystem" - so restoring FROM a running system needs a file-level copy.
+    The -X flag is essential: without it the copy descends into /Volumes and
+    tries to copy the destination into itself.
+
+    Progress caveat worth knowing before you report a percentage to anyone:
+    destination bytes are a poor proxy. ditto writes replacements before
+    removing stale files, so usage churns and can even EXCEED the source
+    mid-run. Use g5_job_status for the completion marker instead of inferring
+    from `df`.
+
+    Re-blesses the destination afterwards so it stays bootable.
+    """
+    s = shlex.quote(source.rstrip("/") or "/")
+    d = shlex.quote(dest.rstrip("/"))
+    script = f"""
+SRC={s}; DST={d}
+[ -d "$DST" ] || {{ echo "destination $DST is not mounted"; exit 1; }}
+echo "source used : $(df -m "$SRC" | tail -1 | awk '{{print $3}}') MB"
+echo "dest used   : $(df -m "$DST" | tail -1 | awk '{{print $3}}') MB"
+echo "dest free   : $(df -m "$DST" | tail -1 | awk '{{print $4}}') MB"
+echo "file count in source (real progress denominator):"
+find "$SRC" -xdev 2>/dev/null | wc -l
+echo "copying with ditto -X ..."
+sudo -n ditto -X "$SRC" "$DST"; echo "ditto rc=$?"
+if [ -d "$DST/System/Library/CoreServices" ]; then
+  echo "re-blessing destination ..."
+  sudo -n bless --folder "$DST/System/Library/CoreServices" --bootefi
+  bless --info "$DST" 2>&1 | grep -i "blessed system file" || echo "NOT BLESSED"
+fi
+echo "dest used after: $(df -m "$DST" | tail -1 | awk '{{print $3}}') MB"
+"""
+    return g5_run_detached(script, job_name)
 
 
 if __name__ == "__main__":
