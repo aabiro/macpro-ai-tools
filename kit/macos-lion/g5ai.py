@@ -28,11 +28,33 @@ import os
 import socket
 import subprocess
 import sys
-import urllib2
 
-__version__ = "1.0.0"
+try:
+    # Lion: Python 2.7
+    import urllib2
+except ImportError:
+    # Debian: Python 3. Bind the handful of names used below onto the stdlib's
+    # Python 3 equivalents, so all call sites stay written the Python 2 way and
+    # this one library serves both machines.
+    import urllib.error
+    import urllib.request
 
-SHARED_DIR = "/Users/Shared/ai-cockpit"
+    class _Urllib2Compat(object):
+        Request = staticmethod(urllib.request.Request)
+        urlopen = staticmethod(urllib.request.urlopen)
+        HTTPError = urllib.error.HTTPError
+        URLError = urllib.error.URLError
+
+    urllib2 = _Urllib2Compat()
+
+__version__ = "1.1.0"
+
+# Where the machine-wide config and helper scripts live. Lion keeps them in
+# /Users/Shared; on Linux there is no such convention, so use /opt.
+if sys.platform == "darwin":
+    SHARED_DIR = "/Users/Shared/ai-cockpit"
+else:
+    SHARED_DIR = "/opt/ai-cockpit"
 SYSTEM_CONFIG = os.path.join(SHARED_DIR, "config.json")
 USER_CONFIG = os.path.expanduser("~/.g5ai.json")
 
