@@ -229,10 +229,27 @@ Installed and working. Do not upgrade it:
 sudo npm install -g @anthropic-ai/claude-code@1.0.128    # if it ever gets replaced
 ```
 
-The auto-updater is disabled system-wide in
-`/etc/profile.d/99-claude-code-pin.sh` (`DISABLE_AUTOUPDATER=1`). **Leave that
-file in place** — without it Claude Code will quietly update itself to 2.x and
-stop working, with only an "Illegal instruction" to explain why.
+The auto-updater is disabled **two** ways, and both matter — Claude Code's own
+config defaults to `autoUpdates: true` and would override a bare env var:
+
+```bash
+# 1. system-wide environment
+cat /etc/profile.d/99-claude-code-pin.sh     # DISABLE_AUTOUPDATER=1
+
+# 2. Claude Code's own config
+claude config get -g autoUpdates             # "false"
+```
+
+**Leave both in place** — without them Claude Code quietly updates itself to 2.x
+and stops working, with only an "Illegal instruction" to explain why.
+
+Verified working state:
+
+```
+version     : 1.0.128 (Claude Code)
+theme       : "dark"
+autoUpdates : "false"
+```
 
 Gemini CLI (`@google/gemini-cli`) is unaffected — still JavaScript, runs fine.
 
