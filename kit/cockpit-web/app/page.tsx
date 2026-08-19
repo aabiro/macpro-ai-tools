@@ -89,7 +89,10 @@ export default function Cockpit() {
       <header className="head">
         <div>
           <h1>AI COCKPIT</h1>
-          <p className="sub">Mac Pro 1,1 &nbsp;//&nbsp; Mac OS X 10.7 Lion &nbsp;//&nbsp; web console</p>
+          {/* This console now runs on the Debian side of the machine and serves
+              both OSes; the Retro-Coder prompts still target Lion, which is the
+              whole point of them. */}
+          <p className="sub">Mac Pro 1,1 &nbsp;//&nbsp; Debian 13 + OS X 10.7 Lion &nbsp;//&nbsp; web console</p>
         </div>
         <div className="hstat">
           {health ? (
