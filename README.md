@@ -11,6 +11,7 @@ genuinely useful machine — with AI tooling that works for *them*.
 | Wanting the full build plan | [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) — phased, with what was dropped and why |
 | The new owner | [`kit/macos-lion/README.md`](kit/macos-lion/README.md) — also installed on the machine at `/Users/Shared/ai-cockpit/README.md` |
 | Installing Linux on it | [`kit/linux/LINUX-STARTER-PACK.md`](kit/linux/LINUX-STARTER-PACK.md) |
+| **What is installed / how to use it** | [`kit/AI-STACK.md`](kit/AI-STACK.md) — services, ports, credentials, MCP |
 | **Linux boots to a black screen** | [`kit/LINUX-BOOT-AND-DISPLAY.md`](kit/LINUX-BOOT-AND-DISPLAY.md) — read this first, it is the one real gotcha |
 | **Doing the disk work** | [`kit/PARTITION-RUNBOOK.md`](kit/PARTITION-RUNBOOK.md) + [`kit/BOOT-STEPS.md`](kit/BOOT-STEPS.md) |
 
