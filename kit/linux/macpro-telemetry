@@ -1,0 +1,276 @@
+#!/usr/bin/env python3
+"""macpro-telemetry -- emit this machine's health as JSON.
+
+Companion to macpro-doctor. That script writes a report for a human to read;
+this one writes numbers for the cockpit's Status tab to display and for a timer
+to archive. Single responsibility each way round.
+
+    macpro-telemetry              print JSON to stdout
+    macpro-telemetry --write      also write /var/lib/macpro-telemetry/latest.json
+
+Design rule: this must ALWAYS emit valid JSON and exit 0, even when a sensor is
+missing or a command fails. A monitoring script that dies is worse than one that
+reports "unknown" -- the timer would go quiet and look healthy.
+
+SMART and ECC data need root. Without it those sections say "needs root" rather
+than pretending everything is fine.
+"""
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+WRITE_PATH = "/var/lib/macpro-telemetry/latest.json"
+
+
+def sh(cmd, timeout=15):
+    """Run a command, returning stdout or None. Never raises."""
+    try:
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        out, _ = p.communicate(timeout=timeout)
+        return out.decode("utf-8", "replace")
+    except Exception:
+        return None
+
+
+def read(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except Exception:
+        return None
+
+
+def num(value, default=None):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+# --------------------------------------------------------------------------
+def collect_load():
+    la = read("/proc/loadavg") or ""
+    parts = la.split()
+    return {
+        "load_1": num(parts[0]) if len(parts) > 0 else None,
+        "load_5": num(parts[1]) if len(parts) > 1 else None,
+        "load_15": num(parts[2]) if len(parts) > 2 else None,
+        "uptime_seconds": int(num((read("/proc/uptime") or "0").split()[0], 0)),
+        "cpu_count": os.cpu_count(),
+    }
+
+
+def collect_memory():
+    info = {}
+    for line in (read("/proc/meminfo") or "").splitlines():
+        if ":" in line:
+            k, v = line.split(":", 1)
+            info[k.strip()] = num(v.strip().split()[0])
+    total = info.get("MemTotal") or 0
+    avail = info.get("MemAvailable") or 0
+    swap_total = info.get("SwapTotal") or 0
+    swap_free = info.get("SwapFree") or 0
+
+    zram = None
+    zdisk = read("/sys/block/zram0/disksize")
+    if zdisk:
+        orig = num(read("/sys/block/zram0/mm_stat") and
+                   (read("/sys/block/zram0/mm_stat").split() or [0])[0], 0)
+        compr = 0.0
+        mm = read("/sys/block/zram0/mm_stat")
+        if mm and len(mm.split()) > 1:
+            compr = num(mm.split()[1], 0) or 0
+        zram = {
+            "disksize_mb": round((num(zdisk, 0) or 0) / 1048576, 1),
+            "original_mb": round((orig or 0) / 1048576, 1),
+            "compressed_mb": round(compr / 1048576, 1),
+            "ratio": round((orig / compr), 2) if compr else None,
+        }
+
+    return {
+        "total_mb": round(total / 1024, 1),
+        "available_mb": round(avail / 1024, 1),
+        "used_percent": round(100.0 * (total - avail) / total, 1) if total else None,
+        "swap_total_mb": round(swap_total / 1024, 1),
+        "swap_used_mb": round((swap_total - swap_free) / 1024, 1),
+        "zram": zram,
+    }
+
+
+def collect_disks():
+    out = []
+    df = sh(["df", "-B1", "--output=source,target,size,used,pcent"]) or ""
+    for line in df.splitlines()[1:]:
+        f = line.split()
+        if len(f) >= 5 and f[0].startswith("/dev/"):
+            out.append({
+                "device": f[0],
+                "mount": f[1],
+                "size_gb": round(num(f[2], 0) / 1e9, 1),
+                "used_gb": round(num(f[3], 0) / 1e9, 1),
+                "used_percent": num(f[4].rstrip("%")),
+            })
+    return out
+
+
+def collect_smart():
+    """Power-on hours and the two sector counts that actually predict failure."""
+    if os.geteuid() != 0:
+        return {"status": "needs root"}
+    if not shutil.which("smartctl"):
+        return {"status": "smartmontools not installed"}
+    # smartctl -A columns are fixed:
+    #   0:ID#  1:NAME  2:FLAG  3:VALUE  4:WORST  5:THRESH  6:TYPE
+    #   7:UPDATED  8:WHEN_FAILED  9:RAW_VALUE
+    # Parse by field index, not by counting \S+ with a regex -- backtracking
+    # made that silently return the wrong column (it reported 198 pending
+    # sectors on a drive whose real count is 0, which is an alarming lie).
+    WANTED = {
+        "Power_On_Hours": "power_on_hours",
+        "Reallocated_Sector_Ct": "reallocated_sectors",
+        "Current_Pending_Sector": "pending_sectors",
+        "Offline_Uncorrectable": "offline_uncorrectable",
+        "Temperature_Celsius": "temperature_c",
+    }
+    drives = {}
+    for dev in sorted(set(re.findall(r"/dev/sd[a-z]", sh(["lsblk", "-pnlo", "NAME"]) or ""))):
+        raw = sh(["smartctl", "-A", "-H", "-i", dev], timeout=30) or ""
+        d = {"health": "unknown"}
+        m = re.search(r"overall-health self-assessment test result:\s*(\S+)", raw)
+        if m:
+            d["health"] = m.group(1)
+        m = re.search(r"Device Model:\s*(.+)", raw)
+        if m:
+            d["model"] = m.group(1).strip()
+        for line in raw.splitlines():
+            parts = line.split()
+            if len(parts) < 10 or parts[1] not in WANTED:
+                continue
+            # RAW_VALUE can carry a suffix, e.g. "45 (0 14 0 0 0)" -- take the number
+            m = re.match(r"(\d+)", parts[9])
+            if m:
+                d[WANTED[parts[1]]] = int(m.group(1))
+        drives[dev] = d
+    return drives or {"status": "no drives found"}
+
+
+def collect_ecc():
+    """FB-DIMMs are this model's most common failure. Zero is the only good answer."""
+    base = "/sys/devices/system/edac/mc"
+    if not os.path.isdir(base):
+        return {"status": "edac not loaded (modprobe i5000_edac)"}
+    total_ce = total_ue = 0
+    found = False
+    for mc in sorted(os.listdir(base)):
+        ce = read(os.path.join(base, mc, "ce_count"))
+        ue = read(os.path.join(base, mc, "ue_count"))
+        if ce is not None:
+            found = True
+            total_ce += int(num(ce, 0) or 0)
+            total_ue += int(num(ue, 0) or 0)
+    if not found:
+        return {"status": "no controllers reporting"}
+    return {"correctable": total_ce, "uncorrectable": total_ue}
+
+
+def collect_thermal():
+    temps = {}
+    if shutil.which("sensors"):
+        raw = sh(["sensors", "-A"]) or ""
+        for line in raw.splitlines():
+            m = re.match(r"\s*([\w .+-]+?):\s*\+?([\d.]+)°C", line)
+            if m:
+                temps[m.group(1).strip()] = num(m.group(2))
+    # thermal zones work without lm-sensors configured
+    zdir = "/sys/class/thermal"
+    if os.path.isdir(zdir):
+        for z in sorted(os.listdir(zdir)):
+            if z.startswith("thermal_zone"):
+                t = read(os.path.join(zdir, z, "temp"))
+                if t:
+                    temps[z] = round((num(t, 0) or 0) / 1000.0, 1)
+    return temps or {"status": "no sensors reporting"}
+
+
+def collect_services():
+    names = ["ai-gateway", "cockpit-web", "code-server", "lightdm",
+             "tailscaled", "nftables", "ssh", "unattended-upgrades"]
+    out = {}
+    for n in names:
+        r = sh(["systemctl", "is-active", n])
+        out[n] = (r or "unknown").strip()
+    return out
+
+
+def collect_display():
+    """Records the radeon workaround's state -- see LINUX-BOOT-AND-DISPLAY.md."""
+    return {
+        "framebuffer": read("/sys/class/graphics/fb0/name") or "none",
+        "resolution": read("/sys/class/graphics/fb0/virtual_size") or "none",
+        "radeon_loaded": "radeon" in (sh(["lsmod"]) or ""),
+        "drm_present": os.path.exists("/dev/dri"),
+        "kernel_cmdline": read("/proc/cmdline") or "",
+    }
+
+
+def collect_tailscale():
+    if not shutil.which("tailscale"):
+        return {"status": "not installed"}
+    raw = sh(["tailscale", "status", "--json"], timeout=10)
+    if not raw:
+        return {"status": "unknown"}
+    try:
+        d = json.loads(raw)
+        return {"state": d.get("BackendState", "unknown"),
+                "self": (d.get("Self") or {}).get("DNSName", "").rstrip(".")}
+    except Exception:
+        return {"status": "unparseable"}
+
+
+def main():
+    report = {
+        "collected_at": int(time.time()),
+        "collected_at_iso": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "hostname": (read("/etc/hostname") or "unknown"),
+        "kernel": (sh(["uname", "-r"]) or "unknown").strip(),
+        "load": collect_load(),
+        "memory": collect_memory(),
+        "disks": collect_disks(),
+        "smart": collect_smart(),
+        "ecc": collect_ecc(),
+        "thermal": collect_thermal(),
+        "services": collect_services(),
+        "display": collect_display(),
+        "tailscale": collect_tailscale(),
+    }
+
+    text = json.dumps(report, indent=2, sort_keys=True)
+    if "--write" in sys.argv:
+        try:
+            os.makedirs(os.path.dirname(WRITE_PATH), exist_ok=True)
+            tmp = WRITE_PATH + ".tmp"
+            with open(tmp, "w") as f:
+                f.write(text + "\n")
+            os.chmod(tmp, 0o644)
+            os.replace(tmp, WRITE_PATH)   # atomic: readers never see a partial file
+        except Exception as exc:
+            sys.stderr.write("macpro-telemetry: could not write %s: %s\n"
+                             % (WRITE_PATH, exc))
+    if "--quiet" not in sys.argv:
+        sys.stdout.write(text + "\n")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as exc:
+        # Still emit valid JSON on catastrophic failure, so consumers see the error.
+        sys.stdout.write(json.dumps({"error": str(exc),
+                                     "collected_at": int(time.time())}) + "\n")
+        sys.exit(0)

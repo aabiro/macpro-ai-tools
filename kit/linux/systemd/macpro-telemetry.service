@@ -1,0 +1,5 @@
+[Unit]
+Description=Collect Mac Pro hardware health as JSON for the cockpit Status tab
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/macpro-telemetry --write --quiet

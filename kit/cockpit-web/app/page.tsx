@@ -12,6 +12,29 @@ interface Health {
   providers_supported: Provider[];
 }
 
+interface SmartDrive {
+  health?: string; model?: string; power_on_hours?: number;
+  reallocated_sectors?: number; pending_sectors?: number;
+  offline_uncorrectable?: number; temperature_c?: number;
+}
+interface Telemetry {
+  available: boolean;
+  reason?: string;
+  age_seconds?: number | null;
+  hostname?: string;
+  kernel?: string;
+  load?: { load_1?: number; load_5?: number; load_15?: number; uptime_seconds?: number; cpu_count?: number };
+  memory?: {
+    total_mb?: number; used_percent?: number;
+    zram?: { original_mb?: number; compressed_mb?: number; ratio?: number | null } | null;
+  };
+  ecc?: { correctable?: number; uncorrectable?: number; status?: string };
+  smart?: Record<string, SmartDrive>;
+  services?: Record<string, string>;
+  display?: { framebuffer?: string; resolution?: string; radeon_loaded?: boolean };
+  tailscale?: { state?: string; status?: string; self?: string };
+}
+
 const CUSTODIAN_PROMPT = `You are a senior Apple hardware technician who has serviced Mac Pro towers since 2006. You are reading a diagnostic snapshot from a Mac Pro 1,1 (2006, dual Xeon 5150, FB-DIMM memory, mechanical drives) running Mac OS X 10.7 Lion.
 
 Structure your answer exactly as:
@@ -68,19 +91,31 @@ export default function Cockpit() {
   const [provider, setProvider] = useState<Provider>("gemini");
   const [lanHint, setLanHint] = useState("");
 
+  // Poll /health rather than fetching once on mount. Keys are added by editing
+  // /etc/ai-cockpit/env and restarting the services, which happens outside this
+  // app -- so every key-dependent piece of UI (the pill, the no-key banner, the
+  // provider list, whether the inputs are enabled) has to be able to notice
+  // that without the user reloading the page.
   useEffect(() => {
-    fetch("/health")
-      .then((r) => r.json())
-      .then((h: Health) => {
-        setHealth(h);
-        if (h.providers_configured?.length && !h.providers_configured.includes(provider)) {
-          setProvider(h.providers_configured[0]);
-        }
-      })
-      .catch(() => setHealth(null));
-    setLanHint(window.location.origin);
+    let alive = true;
+    const load = () =>
+      fetch("/health", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((h: Health) => {
+          if (!alive) return;
+          setHealth(h);
+          // If the selected provider has no key but another does, move to it.
+          const ok = h.providers_configured ?? [];
+          if (ok.length && !ok.includes(provider)) setProvider(ok[0]);
+        })
+        .catch(() => alive && setHealth(null));
+    load();
+    const id = setInterval(load, 20000);
+    return () => { alive = false; clearInterval(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [provider]);
+
+  useEffect(() => { setLanHint(window.location.origin); }, []);
 
   const ready = health?.providers_configured ?? [];
 
@@ -104,9 +139,13 @@ export default function Cockpit() {
           ) : (
             <span className="pill">connecting…</span>
           )}
-          {ready.length > 1 && (
+          {(health?.providers_supported?.length ?? 0) > 1 && (
             <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
-              {ready.map((p) => <option key={p} value={p}>{p}</option>)}
+              {health!.providers_supported.map((p) => (
+                <option key={p} value={p} disabled={!ready.includes(p)}>
+                  {p}{ready.includes(p) ? "" : " (no key)"}
+                </option>
+              ))}
             </select>
           )}
         </div>
@@ -140,10 +179,13 @@ export default function Cockpit() {
 function NoKeys() {
   return (
     <div className="alert">
-      <strong>No API key configured.</strong> Stop the server, set a key, and start it again:
-      <pre>{`export GEMINI_API_KEY=your-key-here
-npm run dev`}</pre>
-      Get a free Gemini key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com/apikey</a>.
+      <strong>No API key configured.</strong> This console runs as a system service, so keys
+      live in one file shared with the Python gateway. On the Mac Pro:
+      <pre>{`sudo nano /etc/ai-cockpit/env
+sudo systemctl restart ai-gateway cockpit-web`}</pre>
+      Set any of <code>ANTHROPIC_API_KEY</code>, <code>GEMINI_API_KEY</code> or{" "}
+      <code>OPENAI_API_KEY</code>. A free Gemini key is at{" "}
+      <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com/apikey</a>.
     </div>
   );
 }
@@ -224,7 +266,7 @@ function Diagnose({ provider, disabled }: { provider: Provider; disabled: boolea
     <div className="tool">
       <p className="hint">
         On the Mac Pro run <code>g5-doctor --raw</code>, paste the output here, and get it
-        interpreted. Useful when the Mac has no gateway configured — that command works
+        interpreted. Useful when the Mac has no gateway configured, since that command works
         entirely offline.
       </p>
       <textarea
@@ -263,8 +305,7 @@ function Retro({ provider, disabled }: { provider: Provider; disabled: boolean }
     <div className="tool">
       <p className="hint">
         Rewrite modern code so it builds on the Mac Pro: Clang 4.2 / C++03, Python 2.7,
-        bash 3.2. Note it is an <strong>Intel</strong> machine (SSE), not a PowerPC G5 —
-        the original project plan had this wrong.
+        bash 3.2.
       </p>
       <div className="row">
         <select value={lang} onChange={(e) => setLang(e.target.value)}>
@@ -290,7 +331,7 @@ function Retro({ provider, disabled }: { provider: Provider; disabled: boolean }
           <pre className="out">{out}</pre>
           {out.includes("RETRO-PORT:") && (
             <div className="alert">
-              Some parts could not be fully ported — search the result for
+              Some parts could not be fully ported. Search the result for
               <code> RETRO-PORT: </code> and review those by hand.
             </div>
           )}
@@ -301,19 +342,103 @@ function Retro({ provider, disabled }: { provider: Provider; disabled: boolean }
 }
 
 function Status({ health, origin }: { health: Health | null; origin: string }) {
+  const [tel, setTel] = useState<Telemetry | null>(null);
+
+  useEffect(() => {
+    const load = () =>
+      fetch("/telemetry").then((r) => r.json()).then(setTel).catch(() => setTel(null));
+    load();
+    const id = setInterval(load, 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  const supported = health?.providers_supported ?? [];
+  const ready = health?.providers_configured ?? [];
+
   return (
     <div className="tool">
-      <h2>Gateway status</h2>
+      <h2>Providers</h2>
       {health ? (
         <table className="kv">
           <tbody>
-            <tr><td>Status</td><td>{health.status}</td></tr>
-            <tr><td>Version</td><td>{health.version}</td></tr>
-            <tr><td>Providers ready</td><td>{health.providers_configured.join(", ") || "none"}</td></tr>
-            <tr><td>Providers supported</td><td>{health.providers_supported.join(", ")}</td></tr>
+            {supported.map((p) => (
+              <tr key={p}>
+                <td>{p}</td>
+                <td>
+                  {ready.includes(p)
+                    ? "key configured"
+                    : "no key in /etc/ai-cockpit/env"}
+                </td>
+              </tr>
+            ))}
+            <tr><td>Gateway</td><td>{health.status} (v{health.version})</td></tr>
           </tbody>
         </table>
       ) : <p className="hint">Could not reach /health.</p>}
+
+      <h2>Hardware</h2>
+      {!tel ? (
+        <p className="hint">Loading telemetry…</p>
+      ) : !tel.available ? (
+        <p className="hint">{tel.reason}</p>
+      ) : (
+        <>
+          <table className="kv">
+            <tbody>
+              <tr><td>Host</td><td>{tel.hostname} / {tel.kernel}</td></tr>
+              <tr><td>Uptime</td><td>{fmtUptime(tel.load?.uptime_seconds)}</td></tr>
+              <tr><td>Load</td><td>{tel.load?.load_1} / {tel.load?.load_5} / {tel.load?.load_15} ({tel.load?.cpu_count} cores)</td></tr>
+              <tr><td>Memory</td><td>{tel.memory?.used_percent}% of {gb(tel.memory?.total_mb)} used</td></tr>
+              {tel.memory?.zram && (
+                <tr><td>zram swap</td><td>
+                  {tel.memory.zram.original_mb} MB stored in {tel.memory.zram.compressed_mb} MB
+                  {tel.memory.zram.ratio ? ` (${tel.memory.zram.ratio}x)` : ""}
+                </td></tr>
+              )}
+              <tr><td>ECC memory</td><td>{fmtEcc(tel.ecc)}</td></tr>
+              <tr><td>Display</td><td>
+                {tel.display?.framebuffer} @ {tel.display?.resolution}
+                {tel.display?.radeon_loaded ? "" : " (radeon disabled by design)"}
+              </td></tr>
+              <tr><td>Tailscale</td><td>{tel.tailscale?.state ?? tel.tailscale?.status ?? "unknown"}{tel.tailscale?.self ? ` (${tel.tailscale.self})` : ""}</td></tr>
+              <tr><td>Collected</td><td>{tel.age_seconds != null ? `${tel.age_seconds}s ago` : "unknown"}</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Drives</h2>
+          <table className="kv">
+            <tbody>
+              {Object.entries(tel.smart ?? {}).map(([dev, d]) => {
+                const bad = (d.reallocated_sectors ?? 0) > 0 || (d.pending_sectors ?? 0) > 0;
+                return (
+                  <tr key={dev}>
+                    <td>{dev}{d.model ? ` (${d.model})` : ""}</td>
+                    <td className={bad ? "warn" : undefined}>
+                      {d.health ?? "unknown"}
+                      {d.power_on_hours != null ? `, ${d.power_on_hours}h` : ""}
+                      {d.reallocated_sectors != null ? `, ${d.reallocated_sectors} reallocated` : ""}
+                      {d.pending_sectors != null ? `, ${d.pending_sectors} pending` : ""}
+                      {d.temperature_c != null ? `, ${d.temperature_c}\u00b0C` : ""}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <h2>Services</h2>
+          <table className="kv">
+            <tbody>
+              {Object.entries(tel.services ?? {}).map(([name, state]) => (
+                <tr key={name}>
+                  <td>{name}</td>
+                  <td className={state === "active" ? undefined : "warn"}>{state}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
 
       <h2>Point the Mac Pro at this app</h2>
       <p className="hint">
@@ -322,20 +447,34 @@ function Status({ health, origin }: { health: Health | null; origin: string }) {
       </p>
       <pre className="out">{`g5-config set gateway ${origin || "http://<this-machine>:3000"}
 g5-config test`}</pre>
-      <p className="hint">
-        Started with <code>next dev</code>? Use <code>-H 0.0.0.0</code> so the Mac can reach it
-        across the network, and use this machine&apos;s LAN IP rather than{" "}
-        <code>localhost</code>.
-      </p>
 
       <h2>Which should I run?</h2>
       <table className="kv">
         <tbody>
           <tr><td><code>aigw.py</code></td><td>Zero install, always works, no UI. The reliable floor.</td></tr>
-          <tr><td>This app</td><td>Needs Node and <code>npm install</code>. Nicer to use.</td></tr>
+          <tr><td>This app</td><td>Needs Node. Nicer to use. Runs as cockpit-web.service.</td></tr>
         </tbody>
       </table>
-      <p className="hint">Either one. Both speak the identical contract.</p>
+      <p className="hint">Both speak the identical contract, so either is fine.</p>
     </div>
   );
+}
+
+function gb(mb?: number) {
+  return mb == null ? "?" : `${(mb / 1024).toFixed(1)} GB`;
+}
+
+function fmtUptime(s?: number) {
+  if (s == null) return "unknown";
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+}
+
+function fmtEcc(e?: Telemetry["ecc"]) {
+  if (!e) return "unknown";
+  if ("status" in e && e.status) return e.status;
+  const ce = e.correctable ?? 0, ue = e.uncorrectable ?? 0;
+  return ce === 0 && ue === 0
+    ? "no errors"
+    : `${ce} correctable, ${ue} uncorrectable`;
 }
