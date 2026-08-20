@@ -63,6 +63,7 @@ single place to rotate credentials.
 | `gemini` | 0.55.1 | |
 | `codex` | 0.0.2505291658 | last **TypeScript** release; current ones are Rust binaries |
 | `gh` | 2.46.0 | GitHub CLI |
+| `aider` | 0.86.2 | needs Python <3.13, so it runs on a standalone 3.12 fetched by `uv` |
 | `g5-codex` | — | read files, propose a patch, show a diff |
 | `g5-copilot` | — | suggest/explain a shell command, never runs it |
 | `g5-gemini` | — | conversation |
@@ -107,8 +108,7 @@ claude mcp add filesystem -s user -- npx -y @modelcontextprotocol/server-filesys
 
 | | |
 |---|---|
-| **Ollama** | binaries require AVX; this CPU has none. `llama.cpp` is built from source instead, see below. |
-| **aider** | needs Python < 3.13; trixie ships only 3.13 |
+| **Ollama** | official binaries require AVX and will SIGILL. Building it from source would work but gains nothing: Ollama is a wrapper around the same ggml kernels, so it would run at the same ~1 tok/s measured below. It buys model management, not speed. |
 | **Claude Code 2.x** | Bun-compiled native binary, hard x86-64-v2 floor |
 | **Desktop VS Code** | untested Electron gamble; `code-server` is strictly better here |
 
@@ -135,12 +135,20 @@ to use conversationally, and the numbers are worth recording so nobody re-treads
 this:
 
 ```
-qwen2 0.6B Q4_K_M, 4 threads
-  pp32 (reading your prompt)    4.74 t/s
-  tg32 (writing the answer)     0.84 t/s
+qwen2 0.6B, 4 threads
+                     reading (pp32)   generating (tg32)
+  Q4_K_M                  4.72 t/s          0.85 t/s
+  Q4_0                   14.03 t/s          1.00 t/s   <- use this one
 ```
 
-At 0.84 tok/s a single paragraph takes roughly two minutes.
+**Use Q4_0, not Q4_K_M.** Q4_K's kernels do more work per weight, which barely
+matters when AVX is available and matters enormously when it is not: reading a
+prompt is **3x faster** on Q4_0. Generation only improves 18%, because
+generation is limited by memory bandwidth (DDR2 FB-DIMM) rather than by
+arithmetic, and no quantisation choice fixes that.
+
+At 1 tok/s a paragraph still takes about two minutes. The prompt-reading gain is
+what makes short tasks tolerable: a 200-token prompt goes from 42 seconds to 14.
 
 **Build flags matter enormously here.** The first attempt used only
 `-DGGML_NATIVE=OFF` to avoid AVX, which drops to the plain x86-64 baseline —
@@ -162,7 +170,7 @@ it directly if you want it:
 
 ```bash
 /opt/llama.cpp/build/bin/llama-cli \
-  -m /opt/models/qwen2.5-0.5b-instruct-q4_k_m.gguf \
+  -m /opt/models/qwen2.5-0.5b-instruct-q4_0.gguf \
   -p "your prompt" -n 64 -t 4 -no-cnv
 ```
 
