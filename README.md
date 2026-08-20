@@ -7,6 +7,7 @@ genuinely useful machine — with AI tooling that works for *them*.
 
 | If you are… | Read |
 |---|---|
+| **Before storing anything on it** | [`kit/DISK-HEALTH-AND-BACKUP.md`](kit/DISK-HEALTH-AND-BACKUP.md) — one drive has 2,814 uncorrectable reads and there is no backup |
 | **Brand new to all of this** | [`kit/NEW-OWNER-START-HERE.md`](kit/NEW-OWNER-START-HERE.md) — one command to remember, and what to do on day one |
 | Handing the machine over | [`HANDOFF.md`](HANDOFF.md) — machine truth and verified state |
 | Wanting the full build plan | [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) — phased, with what was dropped and why |
@@ -21,7 +22,7 @@ genuinely useful machine — with AI tooling that works for *them*.
 `kit/scrub/scrub.sh` exists but **must not be run on this handover.**
 
 The machine is going to the person who owns the `administrator` account. Their
-Desktop, Documents, Downloads, projects, and `Liferaft` backup are *their own
+Desktop, Documents, Downloads and projects are *their own
 files* — deleting them is the opposite of what this handover needs.
 
 The script is kept only for a future handover to a *different* person. If that

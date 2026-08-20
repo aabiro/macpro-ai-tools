@@ -154,7 +154,13 @@ graphics card has no working driver and everything is drawn by the CPU. A
 browser and a terminal are fine. Video is not. That is the hardware, not
 something you have broken.
 
-**One of the two hard disks has been quietly repairing itself for years** — 255
-reallocated sectors on the drive holding the old Mac OS system. It passes its
-own health check and may run for years more, but do not keep anything on this
-machine that exists nowhere else. Set up backups (step 5 of the checklist).
+**One of the two hard disks has a bad history, and nothing on it is backed up.**
+The drive holding the old Mac OS system has failed to read data 2,814 times and
+has patched around at least 255 damaged sectors. It still passes its own health
+check, and it may run for years more, but there is **no second copy of anything
+on it**.
+
+If there is anything on the old Mac system you want to keep, copy it off the
+machine before you do anything else. The how, and the full numbers, are in
+[DISK-HEALTH-AND-BACKUP.md](DISK-HEALTH-AND-BACKUP.md). This is the one warning
+on this page worth acting on today.

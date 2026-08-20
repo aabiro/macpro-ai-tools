@@ -1,5 +1,11 @@
 # Boot Steps — Mac Pro 1,1
 
+> **Historical.** This runbook describes the one-off migration performed in
+> August 2026. The `Liferaft` clone it refers to **no longer exists** — it was
+> absorbed when `disk0` was consolidated into a single full-size volume. Kept
+> for the record; do not follow it as current instructions. For the machine's
+> present state see [../README.md](../README.md).
+
 Every boot transition in `PARTITION-RUNBOOK.md`, in order, with exactly what you
 should see at each one.
 
