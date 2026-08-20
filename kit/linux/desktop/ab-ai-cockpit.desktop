@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=AI Cockpit
+Comment=Chat with AI and check machine health
+Exec=x-www-browser http://127.0.0.1:3000
+Icon=applications-internet
+Terminal=false
+Categories=Utility;

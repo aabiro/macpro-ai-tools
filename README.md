@@ -7,6 +7,7 @@ genuinely useful machine — with AI tooling that works for *them*.
 
 | If you are… | Read |
 |---|---|
+| **Brand new to all of this** | [`kit/NEW-OWNER-START-HERE.md`](kit/NEW-OWNER-START-HERE.md) — one command to remember, and what to do on day one |
 | Handing the machine over | [`HANDOFF.md`](HANDOFF.md) — machine truth and verified state |
 | Wanting the full build plan | [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) — phased, with what was dropped and why |
 | The new owner | [`kit/macos-lion/README.md`](kit/macos-lion/README.md) — also installed on the machine at `/Users/Shared/ai-cockpit/README.md` |

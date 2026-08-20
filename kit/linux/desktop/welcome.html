@@ -1,0 +1,33 @@
+<!doctype html><meta charset="utf-8"><title>Start here</title>
+<style>
+ body{font:16px/1.6 system-ui,sans-serif;max-width:46rem;margin:3rem auto;padding:0 1.5rem;
+      background:#12161c;color:#dfe6ee}
+ h1{font-size:1.7rem;margin-bottom:.2rem} p.sub{color:#8fa0b3;margin-top:0}
+ a.card{display:block;padding:1rem 1.2rem;margin:.7rem 0;background:#1b222b;border:1px solid #2b3542;
+        border-radius:10px;color:#dfe6ee;text-decoration:none}
+ a.card:hover{border-color:#4a7fb5;background:#202935}
+ a.card b{display:block;font-size:1.05rem} a.card span{color:#8fa0b3;font-size:.92rem}
+ code{background:#0d1117;padding:.15rem .4rem;border-radius:4px;color:#9ecbff}
+ .first{border-color:#b5893a;background:#241f16}
+</style>
+<h1>Start here</h1>
+<p class="sub">Everything on this machine is installed and working. One thing is left to do.</p>
+
+<a class="card first" href="#setup"><b>1. Switch the AI on &mdash; do this first</b>
+<span>Open a Terminal and type <code>ai setup</code>. It asks for a key, checks it works, and
+turns everything on. Nothing is saved unless the key actually works.</span></a>
+
+<a class="card" href="http://192.168.1.124:3000"><b>The Cockpit</b>
+<span>Chat with an AI, check the machine's health, port old code. Works after step 1.</span></a>
+
+<a class="card" href="http://192.168.1.124:8443"><b>The Code Editor</b>
+<span>A full editor in the browser. The password is on the machine; ask <code>ai help</code>.</span></a>
+
+<a class="card" href="file:///usr/local/share/doc/macpro/kit/FIRST-RUN-CHECKLIST.md"><b>Day-one checklist</b>
+<span>What to set up, in order, with how to prove each step worked.</span></a>
+
+<h2 id="setup">If anything looks broken</h2>
+<p>Open a Terminal and type <code>ai check</code>. It explains what is wrong in plain
+English and tells you the one command that fixes it. Then <code>ai fix</code>.</p>
+<p>None of those commands can damage anything. <code>ai undo</code> puts back the last
+change. Nothing deletes your files.</p>

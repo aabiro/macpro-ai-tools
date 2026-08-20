@@ -1,0 +1,640 @@
+#!/usr/bin/env python3
+"""ai -- the one command a new owner needs to remember.
+
+This machine is aimed at someone new to AI, editors, git and the command line.
+That shapes every decision here:
+
+  * One word to remember. Everything is a subcommand of `ai`.
+  * Never leave them worse off. Anything that edits a file backs it up first and
+    tells them the exact command to undo it.
+  * Prove it works, don't assert it. `ai setup` makes a real API call before it
+    claims success, because "I set the key and nothing happened" is the single
+    most likely reason someone gives up.
+  * Plain English, always. No stack traces, no jargon without a translation.
+  * Nothing destructive, ever. This script has no delete path.
+
+    ai            what to do next, based on the machine's actual state
+    ai setup      add an AI key, verify it live, turn everything on
+    ai check      is anything wrong? explained in plain English
+    ai fix        repair the things that are safe to repair automatically
+    ai chat       start talking to an AI right now
+    ai help       the short list of everything
+    ai undo       restore the last config file this script changed
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+
+ENV_FILE = "/etc/ai-cockpit/env"
+BACKUP_DIR = "/var/backups/ai-cockpit"
+SERVICES = ["ai-gateway", "cockpit-web", "code-server"]
+
+PROVIDERS = {
+    "anthropic": {
+        "label": "Anthropic (Claude)",
+        "env": "ANTHROPIC_API_KEY",
+        "signup": "https://console.anthropic.com/settings/keys",
+        "starts": "sk-ant-",
+        "verify": ("https://api.anthropic.com/v1/messages",
+                   {"x-api-key": "%s", "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"},
+                   {"model": "claude-3-5-haiku-latest", "max_tokens": 4,
+                    "messages": [{"role": "user", "content": "hi"}]}),
+    },
+    "gemini": {
+        "label": "Google Gemini  (has a free tier)",
+        "env": "GEMINI_API_KEY",
+        "signup": "https://aistudio.google.com/apikey",
+        "starts": "",
+        "verify": ("https://generativelanguage.googleapis.com/v1beta/models"
+                   "/gemini-2.5-flash:generateContent?key=%s",
+                   {"content-type": "application/json"},
+                   {"contents": [{"parts": [{"text": "hi"}]}],
+                    "generationConfig": {"maxOutputTokens": 4,
+                                         "thinkingConfig": {"thinkingBudget": 0}}}),
+    },
+    "openai": {
+        "label": "OpenAI (ChatGPT)",
+        "env": "OPENAI_API_KEY",
+        "signup": "https://platform.openai.com/api-keys",
+        "starts": "sk-",
+        "verify": ("https://api.openai.com/v1/chat/completions",
+                   {"Authorization": "Bearer %s", "content-type": "application/json"},
+                   {"model": "gpt-4o-mini", "max_tokens": 4,
+                    "messages": [{"role": "user", "content": "hi"}]}),
+    },
+}
+
+# --------------------------------------------------------------------------
+# Output helpers. Colour only when attached to a terminal.
+# --------------------------------------------------------------------------
+_TTY = sys.stdout.isatty()
+
+
+def _c(code, text):
+    return "\033[%sm%s\033[0m" % (code, text) if _TTY else text
+
+
+def title(t):
+    print("\n" + _c("1", t))
+    print(_c("2", "-" * len(t)))
+
+
+def ok(t):
+    print("  " + _c("32", "OK") + "    " + t)
+
+
+def bad(t):
+    print("  " + _c("31", "PROBLEM") + "  " + t)
+
+
+def warn(t):
+    print("  " + _c("33", "NOTE") + "  " + t)
+
+
+def info(t):
+    print("        " + t)
+
+
+def step(t):
+    print("\n  " + _c("36", t))
+
+
+def run(cmd, timeout=30):
+    """Run a command. Returns (rc, stdout). Never raises."""
+    try:
+        p = subprocess.run(cmd, capture_output=True, timeout=timeout)
+        return p.returncode, (p.stdout or b"").decode("utf-8", "replace")
+    except Exception as exc:
+        return 1, str(exc)
+
+
+def sudo_prefix():
+    """Return the prefix needed to edit root-owned files, or None if we can't."""
+    if os.geteuid() == 0:
+        return []
+    if shutil.which("sudo"):
+        return ["sudo"]
+    return None
+
+
+def service_state(name):
+    rc, out = run(["systemctl", "is-active", name])
+    return out.strip() or "unknown"
+
+
+def read_env():
+    """Which providers have a usable key?
+
+    Deliberately does NOT read /etc/ai-cockpit/env unless we are already root.
+    That file is mode 0640 root:aigw, so a normal user cannot read it, and
+    shelling out to sudo would make routine commands like `ai check` prompt for
+    a password once the build-time NOPASSWD rule is removed at handover.
+
+    Asking the gateway is also the more truthful signal: it reports the keys it
+    has actually loaded, not merely text sitting in a file.
+    """
+    keys = {}
+    h = gateway_health()
+    if h:
+        for p in (h.get("providers_configured") or []):
+            spec = PROVIDERS.get(p)
+            if spec:
+                keys[spec["env"]] = "configured"
+        return keys
+
+    # Gateway down: fall back to the file, but only if that needs no privileges.
+    if os.geteuid() == 0 and os.path.exists(ENV_FILE):
+        try:
+            with open(ENV_FILE) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        if v.strip():
+                            keys[k.strip()] = v.strip()
+        except OSError:
+            pass
+    return keys
+
+
+def gateway_health(port=8081):
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:%d/health" % port, timeout=6) as r:
+            return json.loads(r.read().decode())
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------
+# Translating errors into something a beginner can act on
+# --------------------------------------------------------------------------
+def explain(exc):
+    s = str(exc)
+    code = getattr(exc, "code", None)
+    if code in (401, 403):
+        return ("That key was rejected. Usually it means a character got lost "
+                "when copying it, or the key was deleted on the provider's "
+                "website. Try copying it again.")
+    if code == 429:
+        return ("The key works, but the provider says you have used up your "
+                "quota or are going too fast. Wait a minute, or check billing "
+                "on their website.")
+    if code == 404:
+        return ("The key works, but the model this test uses is not available "
+                "to your account. The key is probably fine.")
+    if "Name or service not known" in s or "Temporary failure" in s:
+        return ("This machine cannot reach the internet right now. Check the "
+                "network cable, then run:  ai check")
+    if "timed out" in s.lower():
+        return ("The provider did not answer in time. This machine is slow but "
+                "that should not matter. Try again in a minute.")
+    if "certificate" in s.lower():
+        return ("There is a problem with secure connections. Check the system "
+                "clock is correct:  date")
+    return "Unexpected problem: %s" % s
+
+
+def verify_key(provider, key):
+    """Make a real, tiny API call. Returns (True, msg) or (False, msg)."""
+    url, headers, body = PROVIDERS[provider]["verify"]
+    if "%s" in url:
+        url = url % key
+    hdrs = {}
+    for h, v in headers.items():
+        hdrs[h] = (v % key) if "%s" in v else v
+    req = urllib.request.Request(url, data=json.dumps(body).encode(),
+                                 headers=hdrs, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=45) as r:
+            r.read(200)
+        return True, "the provider answered"
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return True, "key accepted (test model unavailable, which is fine)"
+        return False, explain(exc)
+    except Exception as exc:
+        return False, explain(exc)
+
+
+def write_env(newkeys):
+    """Merge keys into the shared env file, backing up the old one first."""
+    pre = sudo_prefix()
+    if pre is None:
+        bad("This step needs administrator rights and sudo is not available.")
+        return False
+
+    existing = read_env()
+    existing.update(newkeys)
+
+    lines = [
+        "# AI provider keys. Shared by the gateway and the web cockpit.",
+        "# Written by `ai setup`. Undo the last change with `ai undo`.",
+        "",
+    ]
+    for p in sorted(PROVIDERS):
+        env = PROVIDERS[p]["env"]
+        lines.append("%s=%s" % (env, existing.get(env, "")))
+    body = "\n".join(lines) + "\n"
+
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    script = (
+        "set -e\n"
+        "mkdir -p %(bk)s\n"
+        "if [ -f %(env)s ]; then cp -p %(env)s %(bk)s/env.%(stamp)s; fi\n"
+        "mkdir -p $(dirname %(env)s)\n"
+        "cat > %(env)s.tmp <<'AIEOF'\n%(body)s"
+        "AIEOF\n"
+        "chown root:aigw %(env)s.tmp 2>/dev/null || true\n"
+        "chmod 640 %(env)s.tmp\n"
+        "mv %(env)s.tmp %(env)s\n"
+    ) % {"bk": BACKUP_DIR, "env": ENV_FILE, "stamp": stamp, "body": body}
+
+    rc, out = run(pre + ["bash", "-c", script], timeout=60)
+    if rc != 0:
+        bad("Could not write the key file: %s" % out.strip()[:200])
+        return False
+    ok("Key saved to %s (previous version kept in %s)" % (ENV_FILE, BACKUP_DIR))
+    return True
+
+
+def restart_services():
+    pre = sudo_prefix() or []
+    for s in SERVICES:
+        run(pre + ["systemctl", "restart", s], timeout=90)
+    time.sleep(6)
+
+
+# --------------------------------------------------------------------------
+# ai setup
+# --------------------------------------------------------------------------
+def cmd_setup(argv):
+    title("Set up an AI key")
+    print("""
+  To talk to an AI you need a key from a provider. It is a long password that
+  says "this is me" when the machine asks them a question. You cannot use this
+  machine's AI features without one.
+
+  You need to sign up on their website and copy the key. Gemini has a free tier,
+  which is the easiest place to start.
+""")
+    names = sorted(PROVIDERS)
+    for i, p in enumerate(names, 1):
+        print("    %d) %-28s  %s" % (i, PROVIDERS[p]["label"], PROVIDERS[p]["signup"]))
+    print("    q) quit without changing anything")
+
+    step("Which one? Type a number and press Enter.")
+    try:
+        choice = input("  > ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print("\n  Nothing changed.")
+        return 0
+    if choice in ("q", "quit", ""):
+        print("  Nothing changed.")
+        return 0
+    if not choice.isdigit() or not (1 <= int(choice) <= len(names)):
+        bad("That was not one of the numbers. Run `ai setup` again.")
+        return 1
+
+    provider = names[int(choice) - 1]
+    spec = PROVIDERS[provider]
+
+    print("""
+  Open this page, sign in, and create a key:
+
+      %s
+
+  Then copy it and paste it below. Pasting is usually ctrl-shift-V in a
+  terminal, or a right-click. It will not appear on screen as you paste --
+  that is deliberate, so nobody reading over your shoulder sees it.
+""" % spec["signup"])
+
+    try:
+        import getpass
+        key = getpass.getpass("  Paste the key here, then press Enter: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print("\n  Nothing changed.")
+        return 0
+
+    if not key:
+        bad("Nothing was pasted. Run `ai setup` again when you have the key.")
+        return 1
+    if spec["starts"] and not key.startswith(spec["starts"]):
+        warn("That does not look like a %s key (they usually start with '%s')."
+             % (spec["label"], spec["starts"]))
+        info("Carrying on anyway -- the check below will tell us for certain.")
+
+    step("Checking the key with %s. This takes a few seconds." % spec["label"])
+    good, msg = verify_key(provider, key)
+    if not good:
+        bad("The key did not work.")
+        info(msg)
+        info("Nothing was saved. Your machine is exactly as it was.")
+        return 1
+    ok("The key works: %s" % msg)
+
+    if not write_env({spec["env"]: key}):
+        return 1
+
+    step("Turning the AI services on.")
+    restart_services()
+
+    h = gateway_health()
+    if h and provider in (h.get("providers_configured") or []):
+        ok("Everything is working. %s is ready to use." % spec["label"])
+        print("""
+  Try it now:
+
+      ai chat                 talk to an AI in this window
+      http://%s:3000     the cockpit, in a web browser
+
+  If you want a second provider later, just run `ai setup` again.
+""" % lan_ip())
+        return 0
+
+    bad("The key is valid, but the services have not picked it up yet.")
+    info("Wait 30 seconds and run:  ai check")
+    return 1
+
+
+def lan_ip():
+    rc, out = run(["hostname", "-I"])
+    return (out.split() or ["this-machine"])[0] if rc == 0 else "this-machine"
+
+
+# --------------------------------------------------------------------------
+# ai check
+# --------------------------------------------------------------------------
+def cmd_check(argv):
+    title("Checking this machine")
+    problems = []
+
+    step("Internet")
+    rc, _ = run(["getent", "hosts", "api.anthropic.com"], timeout=15)
+    if rc == 0:
+        ok("this machine can reach the internet")
+    else:
+        bad("no internet")
+        info("Check the network cable is plugged into the port nearest the top.")
+        problems.append("network")
+
+    step("AI keys")
+    keys = read_env()
+    have = [p for p in sorted(PROVIDERS) if keys.get(PROVIDERS[p]["env"])]
+    if have:
+        ok("keys present for: %s" % ", ".join(have))
+    else:
+        bad("no AI key has been set yet -- nothing AI-related can work")
+        info("Fix it with:  ai setup")
+        problems.append("nokey")
+
+    step("Services")
+    for s in SERVICES:
+        st = service_state(s)
+        if st == "active":
+            ok("%s is running" % s)
+        else:
+            bad("%s is %s" % (s, st))
+            problems.append(s)
+
+    step("The AI gateway")
+    h = gateway_health()
+    if h:
+        ready = h.get("providers_configured") or []
+        if ready:
+            ok("gateway is answering, ready: %s" % ", ".join(ready))
+        else:
+            warn("gateway is answering but has no keys loaded")
+            if not have:
+                info("Expected, since no key is set. Run:  ai setup")
+            else:
+                info("A key exists but was not loaded. Run:  ai fix")
+                problems.append("reload")
+    else:
+        bad("the gateway is not answering on port 8081")
+        problems.append("gateway")
+
+    step("Disks")
+    rc, out = run(["df", "-h", "/"])
+    line = (out.splitlines() or ["", ""])[-1].split()
+    if len(line) >= 5:
+        used = line[4].rstrip("%")
+        if used.isdigit() and int(used) > 90:
+            bad("the disk is %s%% full" % used)
+            problems.append("disk")
+        else:
+            ok("disk has room (%s used)" % line[4])
+
+    print()
+    if not problems:
+        title("Everything is fine")
+        print("  Nothing needs doing. Try `ai chat`.\n")
+        return 0
+    title("What to do")
+    if "nokey" in problems:
+        print("  1. Run:  ai setup        (this is the important one)")
+    if any(p in problems for p in SERVICES + ["gateway", "reload"]):
+        print("  2. Run:  ai fix          (restarts things safely)")
+    if "network" in problems:
+        print("  3. Check the network cable, then run `ai check` again.")
+    if "disk" in problems:
+        print("  4. The disk is nearly full. Ask for help before deleting anything.")
+    print()
+    return 1
+
+
+# --------------------------------------------------------------------------
+# ai fix
+# --------------------------------------------------------------------------
+def cmd_fix(argv):
+    title("Repairing what can be repaired safely")
+    print("""
+  This only restarts services and reloads configuration. It does not delete
+  anything, and it does not touch your files.
+""")
+    pre = sudo_prefix()
+    if pre is None:
+        bad("This needs administrator rights, and sudo is not available.")
+        return 1
+
+    step("Restarting the AI services")
+    for s in SERVICES:
+        rc, _ = run(pre + ["systemctl", "restart", s], timeout=90)
+        (ok if rc == 0 else bad)("%s %s" % (s, "restarted" if rc == 0 else "would not restart"))
+
+    step("Refreshing the hardware report")
+    run(pre + ["systemctl", "start", "macpro-telemetry.service"], timeout=60)
+
+    time.sleep(6)
+    step("Re-checking")
+    h = gateway_health()
+    if h:
+        ready = h.get("providers_configured") or []
+        ok("gateway is answering; ready: %s" % (", ".join(ready) or "no keys yet"))
+    else:
+        bad("the gateway still is not answering")
+        info("Run this and show someone the output:")
+        info("  journalctl -u ai-gateway -n 30 --no-pager")
+        return 1
+    print("\n  Now run:  ai check\n")
+    return 0
+
+
+# --------------------------------------------------------------------------
+# ai undo
+# --------------------------------------------------------------------------
+def cmd_undo(argv):
+    title("Undo the last key change")
+    pre = sudo_prefix() or []
+    rc, out = run(pre + ["bash", "-c", "ls -1t %s/env.* 2>/dev/null" % BACKUP_DIR])
+    backups = [b for b in out.splitlines() if b.strip()]
+    if not backups:
+        warn("There is nothing to undo -- no previous version was saved.")
+        return 0
+    latest = backups[0]
+    print("  Restoring: %s" % latest)
+    rc, out = run(pre + ["bash", "-c",
+                         "cp -p %s %s && chmod 640 %s" % (latest, ENV_FILE, ENV_FILE)])
+    if rc != 0:
+        bad("Could not restore: %s" % out.strip()[:200])
+        return 1
+    ok("Restored. Restarting services.")
+    restart_services()
+    return 0
+
+
+# --------------------------------------------------------------------------
+# ai chat
+# --------------------------------------------------------------------------
+def cmd_chat(argv):
+    keys = read_env()
+    if not any(keys.get(PROVIDERS[p]["env"]) for p in PROVIDERS):
+        title("No AI key yet")
+        print("  You need a key before you can chat. It takes about two minutes:\n")
+        print("      ai setup\n")
+        return 1
+    for cand in ("claude", "g5-gemini", "gemini"):
+        if shutil.which(cand):
+            print("\n  Starting %s. Press ctrl-c to stop.\n" % cand)
+            os.execvp(cand, [cand] + list(argv))
+    bad("No chat program found. Run `ai check`.")
+    return 1
+
+
+# --------------------------------------------------------------------------
+# ai help / default
+# --------------------------------------------------------------------------
+def cmd_help(argv):
+    title("Everything you need, on one screen")
+    print("""
+  THE ONLY COMMANDS YOU MUST KNOW
+
+    ai              show what to do next
+    ai setup        add an AI key (do this first)
+    ai check        find out if something is wrong
+    ai fix          repair it
+    ai chat         talk to an AI
+
+  TALKING TO AI
+
+    claude                  the main AI assistant, in this window
+    g5-copilot suggest ...  "how do I ...?" -- suggests a command, never runs it
+    g5-copilot explain ...  explains a command before you run it
+    g5-codex -m "..." file  proposes changes to a file, shows them first
+
+  IN A WEB BROWSER, from this machine or your laptop
+
+    http://%(ip)s:3000     the cockpit: chat, diagnostics, machine health
+    http://%(ip)s:8443     the code editor
+
+  IF SOMETHING LOOKS BROKEN
+
+    ai check        plain-English report
+    ai fix          safe automatic repair
+    ai undo         put the last key change back
+
+  THINGS THAT CANNOT HURT YOU
+
+    Every command above is safe. `g5-copilot` never runs what it suggests, and
+    the AI file tools show you changes before applying them and keep a .bak copy.
+
+  FULL DOCUMENTATION
+
+    /usr/local/share/doc/macpro/kit/
+      FIRST-RUN-CHECKLIST.md    what to do on day one
+      AI-STACK.md               everything installed, and why
+      LINUX-BOOT-AND-DISPLAY.md if the screen goes black
+""" % {"ip": lan_ip()})
+    return 0
+
+
+def cmd_default(argv):
+    keys = read_env()
+    have = [p for p in sorted(PROVIDERS) if keys.get(PROVIDERS[p]["env"])]
+    h = gateway_health()
+
+    title("This machine")
+    if not have:
+        print("""
+  You have not set up an AI key yet, so nothing AI-related works.
+
+  That is the only thing standing between you and a working setup, and it
+  takes about two minutes. Run:
+
+      ai setup
+
+  Everything else is already installed and running.
+""")
+        return 0
+
+    ready = (h or {}).get("providers_configured") or []
+    if ready:
+        print("""
+  Everything is working. %s ready: %s
+
+  Talk to it:            ai chat
+  In a web browser:      http://%s:3000
+  Everything else:       ai help
+""" % (len(ready), ", ".join(ready), lan_ip()))
+        return 0
+
+    print("""
+  A key is saved, but the services have not loaded it.
+
+  Run:   ai fix
+  Then:  ai check
+""")
+    return 0
+
+
+COMMANDS = {
+    "setup": cmd_setup, "check": cmd_check, "doctor": cmd_check,
+    "fix": cmd_fix, "repair": cmd_fix, "undo": cmd_undo,
+    "chat": cmd_chat, "help": cmd_help, "--help": cmd_help, "-h": cmd_help,
+}
+
+
+def main():
+    argv = sys.argv[1:]
+    if not argv:
+        return cmd_default(argv)
+    cmd = argv[0].lower()
+    if cmd in COMMANDS:
+        return COMMANDS[cmd](argv[1:])
+    print("  '%s' is not something `ai` knows about." % cmd)
+    print("  Try:  ai help")
+    return 2
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print("\n  Stopped. Nothing was changed.")
+        sys.exit(130)
