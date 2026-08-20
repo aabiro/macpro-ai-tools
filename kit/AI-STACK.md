@@ -107,7 +107,7 @@ claude mcp add filesystem -s user -- npx -y @modelcontextprotocol/server-filesys
 
 | | |
 |---|---|
-| **Ollama** | binaries require AVX; this CPU has none. Build `llama.cpp` from source instead — it has scalar fallbacks. Expect ~1–3 tok/s for a 1.5B Q4 model. |
+| **Ollama** | binaries require AVX; this CPU has none. `llama.cpp` is built from source instead, see below. |
 | **aider** | needs Python < 3.13; trixie ships only 3.13 |
 | **Claude Code 2.x** | Bun-compiled native binary, hard x86-64-v2 floor |
 | **Desktop VS Code** | untested Electron gamble; `code-server` is strictly better here |
@@ -126,3 +126,49 @@ sudo nft list ruleset | head -20
 
 See [LINUX-BOOT-AND-DISPLAY.md](LINUX-BOOT-AND-DISPLAY.md) §10 — the remote sudo
 rule and SSH key must both be removed, and the rule exists in two places.
+
+## Local model (llama.cpp) — installed, measured, and deliberately not wired in
+
+`llama.cpp` is built at `/opt/llama.cpp` with a model at
+`/opt/models/qwen2.5-0.5b-instruct-q4_k_m.gguf`. It works. It is also too slow
+to use conversationally, and the numbers are worth recording so nobody re-treads
+this:
+
+```
+qwen2 0.6B Q4_K_M, 4 threads
+  pp32 (reading your prompt)    4.74 t/s
+  tg32 (writing the answer)     0.84 t/s
+```
+
+At 0.84 tok/s a single paragraph takes roughly two minutes.
+
+**Build flags matter enormously here.** The first attempt used only
+`-DGGML_NATIVE=OFF` to avoid AVX, which drops to the plain x86-64 baseline —
+**SSE2 only** — and generated at **0.07 tok/s**. Adding back exactly what this
+CPU does implement gave a 12x improvement:
+
+```
+-DGGML_NATIVE=OFF -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_FMA=OFF
+-DGGML_F16C=OFF -DGGML_SSE42=OFF -DGGML_BMI2=OFF
+-DCMAKE_C_FLAGS="-march=core2 -mtune=core2 -msse3 -mssse3"
+```
+
+If you rebuild it, keep those. Removing `-march=core2` costs you 12x; adding AVX
+gives an illegal instruction.
+
+**It is not exposed in the cockpit or `ai chat`, on purpose.** A two-minute wait
+for one sentence reads as a broken machine, and the new owner is a beginner. Use
+it directly if you want it:
+
+```bash
+/opt/llama.cpp/build/bin/llama-cli \
+  -m /opt/models/qwen2.5-0.5b-instruct-q4_k_m.gguf \
+  -p "your prompt" -n 64 -t 4 -no-cnv
+```
+
+Genuinely useful for: short classification, offline single-word answers, and
+proving the machine still does something with no internet at all. Not useful
+for: conversation, code, or anything you are waiting on.
+
+A faster local model needs different hardware, not different software — see
+[HARDWARE-UPGRADE-PATH.md](HARDWARE-UPGRADE-PATH.md).
