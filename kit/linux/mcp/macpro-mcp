@@ -1,0 +1,284 @@
+#!/usr/bin/env python3
+"""macpro-mcp -- MCP servers tailored to this machine.
+
+Three servers in one file, selected by argv[1]:
+
+    macpro-mcp health     hardware health: telemetry, SMART, ECC
+    macpro-mcp journal    read boot logs and service logs
+    macpro-mcp apt        query installed and available packages
+
+WHY THESE EXIST
+---------------
+Diagnosing this machine has repeatedly meant a human copying command output into
+a chat window. These let an AI read the machine directly, which is the difference
+between "paste your dmesg" and "check the machine".
+
+The health server in particular exists because a marginal DIMM contact went
+undetected for a week: the data was there, nothing could read it.
+
+SAFETY
+------
+Every tool is READ-ONLY. There is no write, delete, install or restart anywhere
+in this file, deliberately -- an agent with a bad idea cannot damage the machine
+through it. Commands are invoked as fixed argv lists, never through a shell, so
+nothing here can be turned into command injection by a crafted argument.
+
+Speaks MCP over stdio with no dependencies beyond the standard library, because
+this machine's CPU cannot run much else reliably.
+"""
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+TELEMETRY = "/var/lib/macpro-telemetry/latest.json"
+
+
+def run(argv, timeout=30):
+    """Fixed-argv subprocess. Never uses a shell. Never raises."""
+    try:
+        p = subprocess.run(argv, capture_output=True, timeout=timeout)
+        return (p.stdout or b"").decode("utf-8", "replace")
+    except Exception as exc:
+        return "error: %s" % exc
+
+
+def _int(value, default, lo, hi):
+    """Clamp caller-supplied numbers; an agent may pass anything."""
+    try:
+        return max(lo, min(hi, int(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+# --------------------------------------------------------------------------
+# health
+# --------------------------------------------------------------------------
+def h_get_health(_):
+    """The 5-minutely telemetry snapshot: load, memory, disks, ECC, services."""
+    try:
+        with open(TELEMETRY) as f:
+            return f.read()
+    except OSError:
+        return json.dumps({"error": "no telemetry yet",
+                           "hint": "is macpro-telemetry.timer enabled?"})
+
+
+def h_get_disk_health(_):
+    """SMART per drive, with the counters that predict failure interpreted.
+
+    smartctl needs root, but this server runs unprivileged -- and asking for
+    sudo would break the moment the build-time NOPASSWD rule is removed. The
+    5-minutely telemetry timer already collects SMART as root and publishes it
+    world-readable, so prefer that and only shell out if we happen to be root.
+    """
+    if os.geteuid() != 0:
+        try:
+            with open(TELEMETRY) as f:
+                tel = json.load(f)
+            drives = tel.get("smart") or {}
+            out = []
+            for dev, d in sorted(drives.items()):
+                rec = dict(d, device=dev, source="telemetry snapshot")
+                notes = []
+                if (d.get("pending_sectors") or 0) > 0:
+                    notes.append("pending sectors above zero: this drive is failing NOW")
+                if (d.get("reallocated_sectors") or 0) > 100:
+                    notes.append("high reallocated count: worn, plan replacement")
+                if notes:
+                    rec["interpretation"] = notes
+                out.append(rec)
+            return json.dumps({"collected_at": tel.get("collected_at_iso"),
+                               "drives": out}, indent=2)
+        except Exception as exc:
+            return json.dumps({"error": "no telemetry available: %s" % exc})
+
+    out = []
+    disks = sorted(set(re.findall(r"/dev/sd[a-z]", run(["lsblk", "-pnlo", "NAME"]))))
+    for d in disks:
+        raw = run(["smartctl", "-A", "-H", "-i", d], timeout=60)
+        if "Permission denied" in raw or "requires root" in raw.lower():
+            out.append({"device": d, "error": "needs root"})
+            continue
+        rec = {"device": d}
+        m = re.search(r"Device Model:\s*(.+)", raw)
+        if m:
+            rec["model"] = m.group(1).strip()
+        m = re.search(r"self-assessment test result:\s*(\S+)", raw)
+        if m:
+            rec["health"] = m.group(1)
+        want = {"Reallocated_Sector_Ct": "reallocated",
+                "Current_Pending_Sector": "pending",
+                "Reported_Uncorrect": "uncorrectable",
+                "Power_On_Hours": "power_on_hours",
+                "UDMA_CRC_Error_Count": "cable_errors"}
+        for line in raw.splitlines():
+            f = line.split()
+            if len(f) >= 10 and f[1] in want:
+                m = re.match(r"(\d+)", f[9])
+                if m:
+                    rec[want[f[1]]] = int(m.group(1))
+        # Say what the numbers mean, so a model does not have to guess.
+        notes = []
+        if rec.get("pending", 0) > 0:
+            notes.append("pending sectors above zero: this drive is failing NOW")
+        if rec.get("reallocated", 0) > 100:
+            notes.append("high reallocated count: worn, plan replacement")
+        if rec.get("cable_errors", 0) > 20:
+            notes.append("many interface errors: suspect the SATA cable")
+        if notes:
+            rec["interpretation"] = notes
+        out.append(rec)
+    return json.dumps(out, indent=2)
+
+
+def h_get_memory_errors(_):
+    """ECC errors via rasdaemon. EDAC cannot work on this chipset."""
+    if not shutil.which("ras-mc-ctl"):
+        return json.dumps({"error": "rasdaemon not installed"})
+    return json.dumps({
+        "summary": run(["ras-mc-ctl", "--summary"], timeout=30).strip(),
+        "note": ("EDAC is unavailable on this Intel 5000X chipset because the "
+                 "kernel has no i5000_edac module, so rasdaemon reading the CPU "
+                 "machine-check banks is the only ECC signal. 'No Memory errors' "
+                 "is the healthy answer; a rising correctable count is the early "
+                 "warning of a failing DIMM."),
+    }, indent=2)
+
+
+# --------------------------------------------------------------------------
+# journal
+# --------------------------------------------------------------------------
+def j_list_boots(_):
+    """Every recorded boot. A missing boot means the kernel never reached userspace."""
+    return run(["journalctl", "--list-boots", "--no-pager"], timeout=45) or "(none)"
+
+
+def j_query(args):
+    argv = ["journalctl", "--no-pager", "-n", str(_int(args.get("lines"), 100, 1, 2000))]
+    boot = args.get("boot")
+    if boot is not None:
+        argv += ["-b", str(_int(boot, 0, -50, 0))]
+    if args.get("unit"):
+        argv += ["-u", str(args["unit"])[:120]]
+    pri = args.get("priority")
+    if pri in ("emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"):
+        argv += ["-p", pri]
+    if args.get("grep"):
+        argv += ["--grep", str(args["grep"])[:200]]
+    out = run(argv, timeout=90)
+    return out or "(no matching entries)"
+
+
+# --------------------------------------------------------------------------
+# apt
+# --------------------------------------------------------------------------
+def a_search(args):
+    q = str(args.get("query", ""))[:80]
+    if not q:
+        return "error: query required"
+    return run(["apt-cache", "search", q], timeout=60)[:20000] or "(no matches)"
+
+
+def a_info(args):
+    n = str(args.get("package", ""))[:80]
+    if not n:
+        return "error: package required"
+    return run(["apt-cache", "policy", n], timeout=45) + "\n" + \
+           run(["apt-cache", "show", n], timeout=45)[:6000]
+
+
+def a_upgradable(_):
+    return run(["apt", "list", "--upgradable"], timeout=90)[:20000] or "(up to date)"
+
+
+# --------------------------------------------------------------------------
+SERVERS = {
+    "health": [
+        ("get_health", "Full health snapshot of this Mac Pro: load, memory, zram, "
+                       "disks, ECC, thermals, service states, display state.", {}, h_get_health),
+        ("get_disk_health", "SMART data per drive with an interpretation of which "
+                            "counters indicate imminent failure.", {}, h_get_disk_health),
+        ("get_memory_errors", "ECC memory error counts from rasdaemon.", {}, h_get_memory_errors),
+    ],
+    "journal": [
+        ("list_boots", "List every recorded boot. Absence of a boot means the kernel "
+                       "never reached userspace on that attempt.", {}, j_list_boots),
+        ("query_journal", "Read the systemd journal.", {
+            "boot": {"type": "integer", "description": "0 = current boot, -1 = previous"},
+            "unit": {"type": "string", "description": "service name, e.g. ai-gateway"},
+            "priority": {"type": "string", "description": "err, warning, info ..."},
+            "grep": {"type": "string", "description": "match text"},
+            "lines": {"type": "integer", "description": "max lines (default 100)"},
+        }, j_query),
+    ],
+    "apt": [
+        ("search_packages", "Search available Debian packages.",
+         {"query": {"type": "string", "description": "search term"}}, a_search),
+        ("package_info", "Show details and install status of one package.",
+         {"package": {"type": "string", "description": "package name"}}, a_info),
+        ("list_upgradable", "Packages with pending updates.", {}, a_upgradable),
+    ],
+}
+
+
+def main():
+    which = sys.argv[1] if len(sys.argv) > 1 else ""
+    if which not in SERVERS:
+        sys.stderr.write("usage: macpro-mcp {health|journal|apt}\n")
+        return 2
+    tools = SERVERS[which]
+    by_name = {t[0]: t for t in tools}
+
+    def send(msg):
+        sys.stdout.write(json.dumps(msg) + "\n")
+        sys.stdout.flush()
+
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+        except ValueError:
+            continue
+        method, rid = req.get("method"), req.get("id")
+
+        if method == "initialize":
+            send({"jsonrpc": "2.0", "id": rid, "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "macpro-" + which, "version": "1.0"}}})
+        elif method == "tools/list":
+            send({"jsonrpc": "2.0", "id": rid, "result": {"tools": [
+                {"name": n, "description": d,
+                 "inputSchema": {"type": "object", "properties": p,
+                                 "required": []}}
+                for n, d, p, _ in tools]}})
+        elif method == "tools/call":
+            params = req.get("params") or {}
+            entry = by_name.get(params.get("name"))
+            if not entry:
+                send({"jsonrpc": "2.0", "id": rid,
+                      "error": {"code": -32601, "message": "unknown tool"}})
+                continue
+            try:
+                text = entry[3](params.get("arguments") or {})
+            except Exception as exc:          # never crash the server
+                text = "tool failed: %s" % exc
+            send({"jsonrpc": "2.0", "id": rid, "result": {
+                "content": [{"type": "text", "text": text}], "isError": False}})
+        elif rid is not None:
+            send({"jsonrpc": "2.0", "id": rid,
+                  "error": {"code": -32601, "message": "unsupported: %s" % method}})
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (KeyboardInterrupt, BrokenPipeError):
+        sys.exit(0)

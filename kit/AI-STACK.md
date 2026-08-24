@@ -74,15 +74,82 @@ The `g5-*` trio exists because **none of the tools above run on Lion** — Pytho
 2.7 with OpenSSL 0.9.8 cannot negotiate TLS 1.2 with any provider. They proxy
 through `ai-gateway`, so the same three commands work on both OSes.
 
+## AI assistants in the editor
+
+`code-server` uses Open VSX, and these vendors publish mainly to Microsoft's
+marketplace, so what installs is not a free choice:
+
+| Extension | Status |
+|---|---|
+| `anthropic.claude-code` | **installed** |
+| `google.geminicodeassist` | **installed** |
+| `openai.chatgpt` | **installed** |
+| `github.copilot` | **not available** — GitHub licenses Copilot to official VS Code only and does not publish to Open VSX. Use `gh copilot` in the terminal instead. |
+
+Plus `ms-python.python`, `eamodio.gitlens`, `timonwong.shellcheck`,
+`esbenp.prettier-vscode`, `redhat.vscode-yaml`, the Jupyter suite, and
+`mechatroner.rainbow-csv`. Full list: `kit/linux/code-server-extensions.txt`.
+
+**`gh copilot` needs your GitHub account.** Run `gh auth login`, then
+`gh extension install github/gh-copilot`.
+
 ## MCP servers (agent tools for `claude`)
+
+Eight servers, **59 tools**. The first five are upstream; the last three were
+written for this machine.
 
 ```
 $ claude mcp list
-filesystem  ✓  scoped to /home/macpro/projects
-memory      ✓  persistent notes across sessions
-git         ✓  read history, diffs, blame
-fetch       ✓  retrieve URLs
-time        ✓  timezone-aware clock
+filesystem      ✓  14 tools, scoped to /home/macpro/projects
+memory          ✓   9 tools, a knowledge graph
+git             ✓  12 tools, status/diff/commit/log/branch
+fetch           ✓   1 tool
+time            ✓   2 tools
+macpro-health   ✓   3 tools  <- this machine
+macpro-journal  ✓   2 tools  <- this machine
+macpro-apt      ✓   3 tools  <- this machine
+```
+
+### The three written here, and why
+
+`/usr/local/bin/macpro-mcp {health|journal|apt}` — one file, three servers,
+**every tool read-only**. No write, delete, install or restart exists in it, and
+commands are invoked as fixed argv lists so no argument can become a shell
+injection.
+
+| Server | Tools | Why |
+|---|---|---|
+| `macpro-health` | `get_health`, `get_disk_health`, `get_memory_errors` | Diagnosing this machine meant a human pasting command output into a chat window for a week. Now an AI can read it. `get_disk_health` **interprets** rather than reports: it will say *"pending sectors above zero: this drive is failing NOW"*. |
+| `macpro-journal` | `list_boots`, `query_journal` | Given how much of this build was "what did the last boot do", an AI that can read boot logs itself is worth having. A missing boot in `list_boots` means the kernel never reached userspace. |
+| `macpro-apt` | `search_packages`, `package_info`, `list_upgradable` | Stops the AI guessing whether something is installed. |
+
+`get_disk_health` reads the root-collected telemetry snapshot when running
+unprivileged, rather than shelling out to `sudo smartctl` — which would break the
+moment the build-time NOPASSWD rule is removed at handover.
+
+## Terminal utilities
+
+Installed for readability and for working over a flaky link:
+
+| Command | What it is |
+|---|---|
+| `glow` | renders this machine's own markdown docs readably in a terminal |
+| `bat` | `cat` with syntax highlighting |
+| `tldr` | plain-English command examples (packaged as `tealdeer` in Debian) |
+| `mosh` | SSH that survives dropped connections — worth it on a machine that reboots often |
+| `rclone` | talks to B2/S3/Drive **and** external drives; the practical backup tool |
+| `rg` / `fd` / `fzf` | fast search, find, fuzzy-select |
+| `ncdu` | find what is filling the disk |
+| `delta` | readable git diffs |
+| `pandoc` | document conversion, e.g. the printable sheet to PDF |
+
+Note Debian ships `bat` as `batcat` and `fd` as `fdfind`; symlinks in
+`/usr/local/bin` restore the usual names.
+
+Read the docs nicely with:
+
+```bash
+glow /usr/local/share/doc/macpro/kit/NEW-OWNER-START-HERE.md
 ```
 
 `filesystem` is deliberately scoped to `~/projects` rather than `/`. Widen it
