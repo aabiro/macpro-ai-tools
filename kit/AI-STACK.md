@@ -17,7 +17,7 @@ before being called working.
 |---|---|---|
 | `ai-gateway` | **8081** | `aigw.py`. TLS bridge so Lion can reach model APIs. |
 | `cockpit-web` | **3000** | Next.js console: Oracle / Custodian / Retro-Coder / Status. |
-| `code-server` | **8443** | VS Code in a browser, extensions and all. |
+| `vscode-web` | **8443** | **Official** VS Code served in a browser. Token in `~/.vscode-web/connection-token`. |
 | `lightdm` | — | XFCE desktop on the physical screen. |
 | `tailscaled` | 41641/udp | Remote access. |
 
@@ -29,10 +29,23 @@ http://192.168.1.124:8443/     editor  (password below)
 http://192.168.1.124:8081/health   gateway health
 ```
 
-**Why code-server rather than desktop VS Code:** the heavy process runs here and
-the UI runs in your laptop's browser. That is the right shape for a 2006 machine
-— the alternative is an Electron app rendering through an unaccelerated
-framebuffer. Desktop VS Code would also be a coin-flip on this CPU.
+**Official VS Code, not code-server.** code-server was used first because it was
+assumed desktop VS Code would not run on an x86-64-v1 CPU. It does — tested,
+`rc=0`, zero invalid-opcode traps, same as `claude-desktop`. Official VS Code was
+then the better choice for one decisive reason: **it uses Microsoft's
+marketplace**, which carries Copilot and Pylance. Open VSX does not and cannot.
+
+You still get the browser experience without code-server, because VS Code ships
+its own web server:
+
+```
+code serve-web --host 0.0.0.0 --port 8443 --connection-token-file ...
+```
+
+That runs as `vscode-web.service` on the same port, so the firewall rule and all
+documentation still apply. code-server is stopped, disabled and its unit removed;
+the binary is left in place only for rollback and can be deleted with
+`rm -rf /usr/local/lib/code-server /usr/local/bin/code-server`.
 
 ### Credentials
 
@@ -79,12 +92,18 @@ through `ai-gateway`, so the same three commands work on both OSes.
 `code-server` uses Open VSX, and these vendors publish mainly to Microsoft's
 marketplace, so what installs is not a free choice:
 
-| Extension | Status |
+All four are present in official VS Code:
+
+| Assistant | How |
 |---|---|
-| `anthropic.claude-code` | **installed** |
-| `google.geminicodeassist` | **installed** |
-| `openai.chatgpt` | **installed** |
-| `github.copilot` | **not available** — GitHub licenses Copilot to official VS Code only and does not publish to Open VSX. Use `gh copilot` in the terminal instead. |
+| **Copilot** | **built into VS Code** — `copilot-chat 0.62.0` ships with it. Nothing to install. |
+| **Claude** | `anthropic.claude-code` |
+| **Gemini** | `google.geminicodeassist` |
+| **ChatGPT / Codex** | `openai.chatgpt` |
+
+This is what official VS Code buys over code-server: on Open VSX, Copilot is
+simply not published, and `ms-python.vscode-pylance` is unavailable too. Both
+work here.
 
 Plus `ms-python.python`, `eamodio.gitlens`, `timonwong.shellcheck`,
 `esbenp.prettier-vscode`, `redhat.vscode-yaml`, the Jupyter suite, and
@@ -99,7 +118,7 @@ Eight servers, **59 tools**. The first five are upstream; the last three were
 written for this machine.
 
 ```
-$ claude mcp list
+$ claude mcp list        # and: gemini mcp list
 filesystem      ✓  14 tools, scoped to /home/macpro/projects
 memory          ✓   9 tools, a knowledge graph
 git             ✓  12 tools, status/diff/commit/log/branch
@@ -109,6 +128,22 @@ macpro-health   ✓   3 tools  <- this machine
 macpro-journal  ✓   2 tools  <- this machine
 macpro-apt      ✓   3 tools  <- this machine
 ```
+
+### All of them, in every tool
+
+They are registered in three places, not just Claude:
+
+| Client | Where it reads them |
+|---|---|
+| `claude` | `claude mcp list` (user scope) |
+| `gemini` | `gemini mcp list` — added with `-s user --trust` |
+| **VS Code** | `~/.config/Code/User/mcp.json` (and code-server's old path) |
+
+One Gemini gotcha worth knowing: `gemini mcp add` defaults to **project** scope,
+so servers added without `-s user` vanish outside that directory. Gemini also
+disables MCP entirely in "untrusted folders" — `security.folderTrust.enabled` is
+set to `false` in `~/.gemini/settings.json`, without which every server shows as
+`Disabled` regardless of configuration.
 
 ### The three written here, and why
 

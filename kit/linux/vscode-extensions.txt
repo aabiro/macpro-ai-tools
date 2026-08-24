@@ -2,11 +2,10 @@ anthropic.claude-code@2.1.241
 eamodio.gitlens@19.0.1
 esbenp.prettier-vscode@12.4.0
 google.geminicodeassist@2.95.0
-googlecloudtools.cloudcode@2.41.0
-googlecloudtools.datacloud@0.9.1
 mechatroner.rainbow-csv@3.24.1
 ms-python.debugpy@2026.6.0
 ms-python.python@2026.4.0
+ms-python.vscode-pylance@2026.3.1
 ms-python.vscode-python-envs@1.36.0
 ms-toolsai.jupyter@2025.9.1
 ms-toolsai.jupyter-keymap@1.1.2

@@ -1,0 +1,21 @@
+[Unit]
+Description=Official VS Code, served in a browser (replaces code-server)
+Documentation=file:///usr/local/share/doc/macpro/kit/AI-STACK.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=macpro
+Group=macpro
+Environment=HOME=/home/macpro
+WorkingDirectory=/home/macpro
+# Same port code-server used, so the firewall rule and documentation still apply.
+# The connection token is the access control; nftables keeps this off the internet.
+ExecStart=/usr/bin/code serve-web --host 0.0.0.0 --port 8443           --connection-token-file /home/macpro/.vscode-web/connection-token           --accept-server-license-terms
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
