@@ -125,6 +125,43 @@ http://&lt;this machine&#x27;s address&gt;:8443     the code editor
 
 <hr>
 
+<h1>Credentials for this machine</h1>
+
+<p><strong>Fill these in by hand before handing the machine over.</strong> They are deliberately</p>
+<p>not stored in any file or repository — a password written into version control</p>
+<p>stays recoverable in its history forever, long after anyone deletes it. A printed</p>
+<p>sheet that travels with the hardware is the right place for them.</p>
+
+<pre>
+  Login username . . . . .  macpro
+
+  Login password . . . . .  ______________________________
+
+  Root password  . . . . .  ______________________________
+                            (if one was set during install)
+</pre>
+
+<p>To set or change the login password, on the machine:</p>
+
+<pre>
+sudo passwd macpro
+</pre>
+
+<p>It asks twice and echoes nothing. That is the only place the password should be</p>
+<p>typed.</p>
+
+<p>### Everything else is not a password</p>
+
+<table>
+<tr><td>What</td><td>Where it lives on the machine</td></tr>
+<tr><td>VS Code browser access</td><td><code>cat ~/.vscode-web/connection-token</code></td></tr>
+<tr><td>AI provider keys</td><td><code>/etc/ai-cockpit/env</code> — set them with <code>ai setup</code></td></tr>
+</table>
+
+<p>Neither is a login credential, and both can be regenerated freely.</p>
+
+<hr>
+
 <h1>What is installed on this machine</h1>
 
 <p>Everything below is already working. You do not have to install anything.</p>

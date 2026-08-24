@@ -1,0 +1,56 @@
+{
+  "preferences": {
+    "launchPreviewPersistedWorkspaces": [],
+    "launchPreviewSessionScopedSessions": [],
+    "coworkHipaaRestricted": false,
+    "coworkWebSearchEnabled": true,
+    "remoteToolsDeviceName": "macpro"
+  },
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/home/macpro/projects"
+      ]
+    },
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ]
+    },
+    "git": {
+      "command": "/home/macpro/.local/bin/mcp-server-git",
+      "args": []
+    },
+    "fetch": {
+      "command": "/home/macpro/.local/bin/mcp-server-fetch",
+      "args": []
+    },
+    "time": {
+      "command": "/home/macpro/.local/bin/mcp-server-time",
+      "args": []
+    },
+    "macpro-health": {
+      "command": "/usr/local/bin/macpro-mcp",
+      "args": [
+        "health"
+      ]
+    },
+    "macpro-journal": {
+      "command": "/usr/local/bin/macpro-mcp",
+      "args": [
+        "journal"
+      ]
+    },
+    "macpro-apt": {
+      "command": "/usr/local/bin/macpro-mcp",
+      "args": [
+        "apt"
+      ]
+    }
+  }
+}

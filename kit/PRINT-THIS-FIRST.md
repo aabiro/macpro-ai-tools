@@ -107,6 +107,42 @@ the machine; `ai help` tells you where.
 
 ---
 
+# Credentials for this machine
+
+**Fill these in by hand before handing the machine over.** They are deliberately
+not stored in any file or repository — a password written into version control
+stays recoverable in its history forever, long after anyone deletes it. A printed
+sheet that travels with the hardware is the right place for them.
+
+```
+  Login username . . . . .  macpro
+
+  Login password . . . . .  ______________________________
+
+  Root password  . . . . .  ______________________________
+                            (if one was set during install)
+```
+
+To set or change the login password, on the machine:
+
+```bash
+sudo passwd macpro
+```
+
+It asks twice and echoes nothing. That is the only place the password should be
+typed.
+
+### Everything else is not a password
+
+| What | Where it lives on the machine |
+|---|---|
+| VS Code browser access | `cat ~/.vscode-web/connection-token` |
+| AI provider keys | `/etc/ai-cockpit/env` — set them with `ai setup` |
+
+Neither is a login credential, and both can be regenerated freely.
+
+---
+
 # What is installed on this machine
 
 Everything below is already working. You do not have to install anything.

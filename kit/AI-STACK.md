@@ -129,15 +129,23 @@ macpro-journal  ✓   2 tools  <- this machine
 macpro-apt      ✓   3 tools  <- this machine
 ```
 
-### All of them, in every tool
+### All eight, in every client that supports MCP
 
-They are registered in three places, not just Claude:
+| Client | Config | Servers |
+|---|---|---|
+| `claude` CLI | `~/.claude.json` (user scope) | **8** |
+| `gemini` CLI | `~/.gemini/settings.json` (`-s user --trust`) | **8** |
+| **VS Code** | `~/.config/Code/User/mcp.json` | **8** |
+| **Claude Desktop** | `~/.config/Claude/claude_desktop_config.json` | **8** |
+| **Codex** | `~/.codex/config.toml` (`[mcp_servers.*]`) | **8** |
+| `aider` | — | **not supported**: aider 0.86.2 has no MCP client. Not a configuration gap. |
 
-| Client | Where it reads them |
-|---|---|
-| `claude` | `claude mcp list` (user scope) |
-| `gemini` | `gemini mcp list` — added with `-s user --trust` |
-| **VS Code** | `~/.config/Code/User/mcp.json` (and code-server's old path) |
+Copies of all five configs live in `kit/linux/mcp-clients/` so a rebuild can
+restore them directly.
+
+The VS Code entry covers the editor's own chat **and** its AI extensions, since
+Copilot Chat and the others consume VS Code's MCP registry rather than keeping
+private ones.
 
 One Gemini gotcha worth knowing: `gemini mcp add` defaults to **project** scope,
 so servers added without `-s user` vanish outside that directory. Gemini also
