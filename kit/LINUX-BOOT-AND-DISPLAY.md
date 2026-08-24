@@ -94,6 +94,12 @@ set gfxpayload=text
 If you ever rebuild that menu, keep it. Test it by cold booting three times, not
 once: a single success proves nothing when the failure rate is 2 in 3.
 
+**Honest status: pinning it did NOT fix the intermittent failure.** Testing over
+six cold boots gave roughly the same success rate as before (about 1 in 3-5).
+The setting is correct and worth keeping -- an unpinned handover is genuinely
+unsafe on this firmware -- but it is not the cause of the intermittency. The
+cause is still unknown. See §13.
+
 ## 3b. Do NOT set `GRUB_GFXPAYLOAD_LINUX=keep`
 
 This is worth its own section because it wasted hours and looks like the
@@ -488,3 +494,64 @@ timedatectl        # want: "RTC in local TZ: no"
 Both systems run NTP, so both correct themselves within a minute of booting.
 The only lasting artifact is odd timestamps in the first moments of a boot log.
 Harmless, but worth recognising rather than chasing.
+
+
+---
+
+# 13. Intermittent failure to boot at all — still open
+
+**Symptom.** From cold, roughly **one boot in three to one in five** reaches
+Debian. The others show a single underscore after Enter on the GRUB menu, then
+black. No kernel output, no network, fans quiet, chime normal, and **no
+`T_FAULT`** — so this is NOT the memory fault in §11, which was fixed.
+
+**What is proven, not guessed:**
+
+- `journalctl --list-boots` shows **no record at all** for failed attempts, so
+  the kernel never reaches userspace.
+- On a failed boot, **a single tap of the power button switches the machine
+  off**. A successful boot needs a 10-second hold. A running OS traps that
+  button; so on a failure there is genuinely no OS running.
+- Both drives are healthy: the Debian disk has 0 pending sectors, 0
+  uncorrectable, no filesystem errors.
+- Memory tests clean, ECC reports no errors on boots that succeed.
+- **Mac OS X Lion boots reliably every time**, which is the most puzzling part.
+
+**Ruled out** (each tested, each wrong):
+
+| Theory | How it was eliminated |
+|---|---|
+| DHCP blocked by nftables | masked the firewall; no change |
+| Bad memory | reseating fixed `T_FAULT` and the fans, but not this |
+| `graphical.target` / lightdm | booted `multi-user.target`; no change |
+| Unpinned `gfxpayload` | pinned to `text`; success rate unchanged |
+| Disk read failure | SMART clean, no ext4 errors, GRUB reads fine |
+
+**Still plausible:** the power supply. It is 19 years old, ageing electrolytic
+capacitors are this model's second failure mode after the FB-DIMMs, and
+intermittent failure-to-start is the classic symptom. `autorestart` being on
+explains the machine powering up when mains is reconnected — that part is a
+setting, not a fault.
+
+## The instrument to use next
+
+Every boot entry now carries `earlyprintk=efi,keep`, and there is a dedicated
+entry:
+
+```
+Debian - VERBOSE diagnostic (use when a boot fails)
+```
+
+`earlyprintk` writes to the firmware framebuffer from the kernel's **first
+instruction**, before the normal console exists. So a failing boot should now
+print something and then stop, instead of showing a bare cursor.
+
+**When a boot fails, photograph the last line on screen.** That single line is
+worth more than any further theorising — it names what the kernel was doing when
+it stopped. If nothing prints even with `earlyprintk`, the kernel is not
+executing at all, and the investigation moves to the power supply and the logic
+board rather than software.
+
+**Workaround in the meantime:** it does boot, it just takes patience. Power off
+fully and try again; two or three attempts usually get there. Once up it is
+completely stable — uptimes of many hours with zero failed units.
