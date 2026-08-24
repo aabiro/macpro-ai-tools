@@ -103,6 +103,11 @@ claude mcp add filesystem -s user -- npx -y @modelcontextprotocol/server-filesys
   beats writing them out; this is the largest perceived-speed win available.
 - **unattended-upgrades** — security updates apply automatically. Left on
   deliberately for a machine changing hands.
+- **rasdaemon** — ECC/memory error reporting via the CPU's machine-check banks.
+  Required because `i5000_edac` is absent from this kernel, so EDAC can never
+  work on this chipset. `sudo ras-mc-ctl --summary` should say "No Memory
+  errors"; a rising correctable count is the early warning of a failing DIMM.
+  See LINUX-BOOT-AND-DISPLAY.md §11.
 
 ## What is not installed, and why
 

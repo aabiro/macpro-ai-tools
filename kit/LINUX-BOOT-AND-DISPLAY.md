@@ -166,7 +166,8 @@ kernel          : 6.12.101+deb13-amd64  (6.12.94 also installed as fallback)
 hostname/user   : macpro / macpro
 GPU             : 08:00.0 R580 [Radeon X1900 XT] [1002:7249]
 CPU             : 2x Xeon 5150 "Woodcrest" -- x86-64-v1, no SSE4.1/SSE4.2/POPCNT
-RAM             : 6 GB DDR2 FB-DIMM ECC, all 6 sticks Status: OK
+RAM             : 8 GB DDR2 FB-DIMM ECC (8x1GB, all slots). NOTE: DIMM A4 had a
+                  marginal contact that broke every Linux boot -- see §11
 ```
 
 **Disk naming is counter-intuitive and has caused mistakes:** Linux calls the
@@ -329,3 +330,101 @@ sed -i '/aaryn.alexander@gmail.com/d' ~/.ssh/authorized_keys
 
 `macpro` stays in the `sudo` group and will simply be asked for a password,
 which is the normal Debian arrangement.
+
+---
+
+# 11. Linux dies with NO output at all, and the fans stay loud
+
+This is a different fault from §1, it is **hardware**, and it cost a week to
+find. Read this before touching any software.
+
+## Symptoms
+
+- GRUB menu appears and works normally
+- You press Enter and get a **single underscore, then black** — no kernel
+  messages at all, not even with `nomodeset`
+- **Fans ramp to full after the chime and never settle**
+- On roughly every other cold boot there is no video whatsoever
+- A **red LED labelled `T_FAULT`** is lit on the horizontal board at the front
+  of the case, below the fan and graphics card
+- Mac OS X **still boots fine**, which is deeply misleading
+
+## Cause: a marginal FB-DIMM contact
+
+`T_FAULT` is the thermal fault indicator. FB-DIMMs carry an AMB buffer chip that
+runs hot, and this model's memory risers are marginal on airflow when fully
+populated. A DIMM making poor contact overheats, the SMC raises `T_FAULT`, pins
+the fans, and the machine becomes unstable in a way that kills Linux before the
+console initialises.
+
+**On this machine it was DIMM A4** — reseating that one stick fixed it, with all
+eight sticks working afterwards. The contacts are twenty years old; oxide film
+plus heat is enough.
+
+**Why Mac OS X survives and Linux does not:** Lion touches a fraction of the
+installed memory. Linux reads all of it during early boot, which is exactly
+where these boots die. A working macOS boot does **not** clear the memory.
+
+If it gets far enough to run a kernel you may see a panic like this, which is
+the same fault one notch less severe:
+
+```
+CPU: 3  PID: 345  Comm: modprobe   Tainted: G D L
+RIP: 0010:do_user_addr_fault+0xce/0x520
+     __get_user_8+0x18/0x30
+Code: Unable to access opcode bytes at 0x7f4eb5718978
+```
+
+A page fault *inside* the page-fault handler, with "unable to access opcode
+bytes", in an unrelated process. That is bad memory, not a driver.
+
+## Fixing it
+
+Slots pair as **1+2** and **3+4** on each riser. A pair must be complete or the
+firmware may ignore it — filling 1,2,3 and leaving 4 empty can quietly run as
+four sticks.
+
+1. **Reseat everything first.** Press until the clips at *both* ends snap up on
+   their own. This alone fixed it here, and also recovered two sticks that had
+   not been registering at all (6 GB became 8 GB).
+2. If it still fails, **bisect by pair.** Fill `A1,A2,A3,A4` + `B1,B2`. Boots?
+   The fault is in the pair you left out. Fails? It is in `A3`/`A4`.
+3. To find the single stick, put **one** suspect back beside a known-good one.
+   Boots means the one you inserted is good.
+4. Mark the sticks with tape as you go.
+
+With one genuinely dead stick you can still run three complete pairs (6 GB) and
+keep a spare. 1 GB FB-DIMMs are cheap secondhand.
+
+## Watch for it recurring: ECC via rasdaemon, not EDAC
+
+**EDAC cannot work on this machine.** The chipset is an Intel 5000X and Debian's
+kernel no longer ships `i5000_edac` — it has `i5100`, `i5400` and `i7300` but
+not `i5000`. So `/sys/devices/system/edac/mc` stays empty forever, and the
+obvious instrument reads as "healthy" when it is simply *absent*. That misled
+this investigation for days.
+
+`rasdaemon` reads corrected and uncorrected memory errors from the CPU's
+machine-check banks instead, which needs no EDAC driver:
+
+```bash
+sudo apt install rasdaemon
+sudo systemctl enable --now rasdaemon
+sudo ras-mc-ctl --summary        # want: "No Memory errors."
+```
+
+It is installed and enabled, and `macpro-telemetry` reports it, so the cockpit's
+Status tab shows it. **A rising correctable count is the early warning** — it
+appears days before anything panics. If this fault had been instrumented from
+the start it would have been an afternoon, not a week.
+
+## Debugging lesson worth keeping
+
+`ping` is not a boot test if you have not confirmed the machine is awake and
+powered. Several conclusions in this investigation were drawn from silence that
+turned out to be a sleeping machine running the *other* OS. Check
+`last reboot` and `pmset -g log` on the macOS side before concluding a Linux
+boot failed.
+
+And when Linux fails but macOS boots, **suspect memory before software.** The
+asymmetry is a symptom, not a contradiction.

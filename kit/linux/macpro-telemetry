@@ -160,22 +160,64 @@ def collect_smart():
 
 
 def collect_ecc():
-    """FB-DIMMs are this model's most common failure. Zero is the only good answer."""
+    """ECC / memory error reporting.
+
+    EDAC is a dead end on this machine: the chipset is an Intel 5000X, and
+    Debian's kernel no longer ships i5000_edac (it has i5100/i5400/i7300 but
+    not i5000). So /sys/devices/system/edac/mc stays empty forever and the
+    obvious instrument reads as "healthy" when it is simply absent.
+
+    rasdaemon reads corrected/uncorrected memory errors from the CPU's
+    machine-check banks instead, which works regardless of EDAC. This matters:
+    a marginal DIMM shows up here as a rising correctable count days before it
+    corrupts anything, and the absence of this signal is why a bad contact on
+    DIMM A4 took a week of guesswork to find.
+    """
+    if shutil.which("ras-mc-ctl"):
+        summ = sh(["ras-mc-ctl", "--summary"], timeout=20) or ""
+        out = {"source": "rasdaemon",
+               "daemon": (sh(["systemctl", "is-active", "rasdaemon"])
+                          or "unknown").strip()}
+        if "No Memory errors" in summ:
+            out.update({"correctable": 0, "uncorrectable": 0, "clean": True})
+            return out
+
+        # Errors exist. Isolate ONLY the memory section before counting: the
+        # words "correctable" and "uncorrectable" also appear in the CXL section
+        # headers, and matching them across the whole output reported a phantom
+        # uncorrectable error on a machine with none.
+        block, collecting = [], False
+        for line in summ.splitlines():
+            if "memory error" in line.lower():
+                collecting, block = True, [line]
+                continue
+            if collecting:
+                if not line.strip():
+                    break
+                block.append(line)
+        text = "\n".join(block)
+        ce = re.search(r"(\d+)\s+correct", text, re.I)
+        ue = re.search(r"(\d+)\s+uncorrect", text, re.I)
+        out["clean"] = False
+        out["correctable"] = int(ce.group(1)) if ce else None
+        out["uncorrectable"] = int(ue.group(1)) if ue else None
+        if out["correctable"] is None and out["uncorrectable"] is None:
+            # Better to hand a human the text than to publish a made-up number.
+            out["raw"] = text[:400] or summ[:400]
+        return out
+
+    # Fall back to EDAC, which on this hardware will report nothing.
     base = "/sys/devices/system/edac/mc"
-    if not os.path.isdir(base):
-        return {"status": "edac not loaded (modprobe i5000_edac)"}
-    total_ce = total_ue = 0
-    found = False
-    for mc in sorted(os.listdir(base)):
-        ce = read(os.path.join(base, mc, "ce_count"))
-        ue = read(os.path.join(base, mc, "ue_count"))
-        if ce is not None:
-            found = True
-            total_ce += int(num(ce, 0) or 0)
-            total_ue += int(num(ue, 0) or 0)
-    if not found:
-        return {"status": "no controllers reporting"}
-    return {"correctable": total_ce, "uncorrectable": total_ue}
+    if os.path.isdir(base):
+        for mc in sorted(os.listdir(base)):
+            ce = read(os.path.join(base, mc, "ce_count"))
+            if ce is not None:
+                return {"source": "edac",
+                        "correctable": int(num(ce, 0) or 0),
+                        "uncorrectable": int(num(read(os.path.join(base, mc,
+                                                     "ue_count")), 0) or 0)}
+    return {"status": "no ECC reporting available -- install rasdaemon",
+            "note": "i5000_edac is absent from this kernel; EDAC cannot work here"}
 
 
 def collect_thermal():
