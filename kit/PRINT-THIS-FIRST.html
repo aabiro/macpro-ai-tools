@@ -1,0 +1,190 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Mac Pro - start here</title><style>
+ @page { margin: 16mm; }
+ body { font: 11.5pt/1.5 Georgia, "Times New Roman", serif; max-width: 46em; margin: 0 auto; color:#000; }
+ h1 { font-size: 19pt; border-bottom: 2px solid #000; padding-bottom:.2em; margin-top:1.4em; }
+ h2 { font-size: 13.5pt; margin-top:1.4em; page-break-after: avoid; }
+ pre { background:#f2f2f2; border-left:3px solid #666; padding:.6em .8em; font:10pt Menlo,Consolas,monospace;
+       white-space:pre-wrap; page-break-inside: avoid; }
+ code { font:10.5pt Menlo,Consolas,monospace; background:#f2f2f2; padding:0 .2em; }
+ table { border-collapse:collapse; width:100%; margin:.7em 0; page-break-inside:avoid; }
+ td { border:1px solid #999; padding:.35em .5em; vertical-align:top; font-size:11pt; }
+ tr td:first-child { width:32%; }
+ hr { border:0; border-top:1px solid #000; margin:1.6em 0; }
+ li { margin:.2em 0; }
+ strong { font-weight:700; }
+ @media print { a { text-decoration:none; color:#000; } }
+</style></head><body>
+<h1>Mac Pro — start here</h1>
+
+<p><strong>Print this and keep it with the machine.</strong> It covers everything from pressing</p>
+<p>the power button to having a working AI assistant. You do not need to know</p>
+<p>anything about Linux, programming or AI.</p>
+
+<p>Two systems are installed. Both work. You choose at power-on.</p>
+
+<table>
+<tr><td><strong>Debian Linux</strong></td><td>the modern side. AI tools, web browser, code editor.</td></tr>
+<tr><td><strong>Mac OS X Lion</strong></td><td>the original 2006 system, with the previous owner's files.</td></tr>
+</table>
+
+<hr>
+
+<h2>1. Power on</h2>
+
+<p>Press the power button once. Wait.</p>
+
+<p><strong>If you see a desktop with a teal background — you are done, skip to step 3.</strong></p>
+
+<p><strong>If the screen stays black for more than two minutes</strong>, that is a known fault</p>
+<p>with a known fix. Go to step 2.</p>
+
+<h2>2. Choosing which system starts</h2>
+
+<p>Hold the <strong>Option</strong> key (⌥, next to the spacebar) <strong>before</strong> you press power,</p>
+<p>and keep holding it until icons appear.</p>
+
+<p>You will see up to three icons:</p>
+
+<pre>
+   [ Lion ]        [ EFI Boot ]         [ EFI Boot ]
+   silver           SILVER               ORANGE
+   Mac OS X         Debian Linux         USB stick, if inserted
+</pre>
+
+<li><strong>Silver "EFI Boot"</strong> — Debian Linux. <strong>This is the normal choice.</strong></li>
+<li><strong>"Lion"</strong> — the old Mac system.</li>
+<li><strong>Orange</strong> — only appears with a USB stick in. Ignore it.</li>
+
+<p>Click the silver <strong>EFI Boot</strong>, then press Return.</p>
+
+<p>A black-and-white menu appears. The top line is already selected:</p>
+
+<pre>
+&gt; Debian GNU/Linux (normal)
+  Debian - repair filesystem (forced fsck)
+  Debian - emergency shell
+  ...
+</pre>
+
+<p>Press <strong>Return</strong>. Wait up to two minutes.</p>
+
+<p><strong>If that fails, come back and pick the second line</strong> — "repair filesystem".</p>
+<p>It checks the disk for damage and takes a few minutes longer. It is safe.</p>
+
+<h2>3. Logging in</h2>
+
+<p>Username: <strong>macpro</strong></p>
+<p>Password: <strong>supplied separately with this machine</strong></p>
+
+<h2>4. Switch the AI on — the only setup step</h2>
+
+<p>Open a <strong>Terminal</strong> window (the black icon in the bar at the bottom of the</p>
+<p>screen), then type this and press Return:</p>
+
+<pre>
+ai setup
+</pre>
+
+<p>It will ask which AI provider you want, show you the web page to sign up on, and</p>
+<p>ask you to paste the key it gives you. It then **tests the key before saving</p>
+<p>it** — if the key is wrong it tells you why and changes nothing.</p>
+
+<p>Google Gemini has a free option and is the easiest place to start.</p>
+
+<p>That is the whole setup. Everything else is already installed.</p>
+
+<h2>5. The only commands worth remembering</h2>
+
+<p>Type these in a Terminal:</p>
+
+<table>
+<tr><td>Type this</td><td>What happens</td></tr>
+<tr><td><code>ai</code></td><td>tells you what to do next</td></tr>
+<tr><td><code>ai setup</code></td><td>switch the AI on (step 4)</td></tr>
+<tr><td><code>ai check</code></td><td>plain-English report on anything wrong</td></tr>
+<tr><td><code>ai fix</code></td><td>repairs what is safe to repair</td></tr>
+<tr><td><code>ai chat</code></td><td>talk to an AI</td></tr>
+<tr><td><code>ai help</code></td><td>one screen listing everything</td></tr>
+<tr><td><code>ai undo</code></td><td>undoes the last change <code>ai</code> made</td></tr>
+</table>
+
+<p><strong>None of these can break the machine.</strong> There is no delete in any of them.</p>
+
+<h2>6. In a web browser</h2>
+
+<p>From this machine, or from a laptop on the same network:</p>
+
+<pre>
+http://&lt;this machine&#x27;s address&gt;:3000     the AI Cockpit
+http://&lt;this machine&#x27;s address&gt;:8443     the code editor
+</pre>
+
+<p>Type <code>ai help</code> to see the exact addresses. The editor's password is stored on</p>
+<p>the machine; <code>ai help</code> tells you where.</p>
+
+<hr>
+
+<h1>If something goes wrong</h1>
+
+<h2>The screen is black and the fans are LOUD and never quieten</h2>
+
+<p><strong>This is a memory fault, and it has happened before.</strong> Do not reinstall</p>
+<p>anything.</p>
+
+<p>Open the side panel and look for a small <strong>red light labelled <code>T_FAULT</code></strong> on the</p>
+<p>board at the front, below the fan.</p>
+
+<p>If it is lit: switch off, unplug, and **push the memory sticks firmly back into</p>
+<p>their slots** until the clips at both ends click up by themselves. They are on</p>
+<p>two removable trays behind the front grille. This alone has fixed it.</p>
+
+<p>The contacts are twenty years old. This will probably happen again one day, and</p>
+<p>this is the fix.</p>
+
+<h2>The screen goes black but the fans are NORMAL</h2>
+
+<p>Hold Option at power-on and choose the <strong>second</strong> menu line, "repair</p>
+<p>filesystem". If that does not help, choose <strong>Lion</strong> instead — it almost always</p>
+<p>starts — and the machine is still usable while you get help.</p>
+
+<h2>Anything else</h2>
+
+<p>Log in, open a Terminal, and type:</p>
+
+<pre>
+ai check
+</pre>
+
+<p>It tests the network, the AI keys, every service and the disks, and prints a</p>
+<p>numbered list of what to do about anything it finds.</p>
+
+<hr>
+
+<h1>Two things to know about this machine</h1>
+
+<p><strong>It is from 2006, and the graphics are slow.</strong> A browser and a terminal are</p>
+<p>fine. Video is not. The screen is drawn entirely by the processor because this</p>
+<p>graphics card has no modern driver. That is normal here, not a fault.</p>
+
+<p><strong>One of the two hard disks is worn.</strong> The disk holding the old Mac system has</p>
+<p>failed to read data thousands of times over its life. It still works, but</p>
+<p><strong>nothing on it is backed up.</strong> Do not store anything on this machine that does</p>
+<p>not exist somewhere else, and set up backups early.</p>
+
+<hr>
+
+<h1>Full documentation</h1>
+
+<p>Everything is on the machine. Open a Terminal and type:</p>
+
+<pre>
+ls /usr/local/share/doc/macpro/kit/
+</pre>
+
+<p>Start with <strong>NEW-OWNER-START-HERE.md</strong>, then <strong>FIRST-RUN-CHECKLIST.md</strong>.</p>
+
+<p>If the machine will not start at all, those same files are in the project</p>
+<p>repository under <code>docs/g5-handoff/kit/</code>.</p>
+
+</body></html>

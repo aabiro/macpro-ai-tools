@@ -68,6 +68,7 @@ single place to rotate credentials.
 | `g5-copilot` | — | suggest/explain a shell command, never runs it |
 | `g5-gemini` | — | conversation |
 | `ai-session` | — | `tmux` workspace that survives disconnects |
+| `ai` | — | the one command a beginner needs: `setup`, `check`, `fix`, `chat`, `undo` |
 
 The `g5-*` trio exists because **none of the tools above run on Lion** — Python
 2.7 with OpenSSL 0.9.8 cannot negotiate TLS 1.2 with any provider. They proxy
@@ -103,6 +104,12 @@ claude mcp add filesystem -s user -- npx -y @modelcontextprotocol/server-filesys
   beats writing them out; this is the largest perceived-speed win available.
 - **unattended-upgrades** — security updates apply automatically. Left on
   deliberately for a machine changing hands.
+- **no screen locker, no display blanking** — `light-locker` is removed and DPMS
+  is disabled (autostart runs `xset -dpms s off s noblank`). On this machine a
+  blank screen is the signature of the hardware fault in
+  LINUX-BOOT-AND-DISPLAY.md §11, so a beginner cannot distinguish a locked
+  session from a failure. That ambiguity costs more than the lock protects on a
+  home LAN.
 - **rasdaemon** — ECC/memory error reporting via the CPU's machine-check banks.
   Required because `i5000_edac` is absent from this kernel, so EDAC can never
   work on this chipset. `sudo ras-mc-ctl --summary` should say "No Memory
@@ -174,10 +181,23 @@ for one sentence reads as a broken machine, and the new owner is a beginner. Use
 it directly if you want it:
 
 ```bash
-/opt/llama.cpp/build/bin/llama-cli \
+/opt/llama.cpp/build/bin/llama-simple \
   -m /opt/models/qwen2.5-0.5b-instruct-q4_0.gguf \
-  -p "your prompt" -n 64 -t 4 -no-cnv
+  -n 64 "your prompt here"
 ```
+
+Use **`llama-simple`, not `llama-cli`**. `llama-cli` drops into its interactive
+prompt on this build even with `-no-cnv` / `--no-conversation`, and emits only
+`>` characters when driven non-interactively. `llama-simple` has no interactive
+layer and prints the completion directly:
+
+```
+$ llama-simple -m .../q4_0.gguf -n 12 "The capital of France is"
+The capital of France is Paris, and it is the capital of Europe. It is
+```
+
+(That answer is partly wrong, which is what a 0.6B model at this size gives you.
+Useful for classification and short factual lookups, not for reasoning.)
 
 Genuinely useful for: short classification, offline single-word answers, and
 proving the machine still does something with no internet at all. Not useful

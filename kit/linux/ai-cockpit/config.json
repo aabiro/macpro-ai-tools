@@ -1,0 +1,5 @@
+{
+  "gateway": "http://127.0.0.1:8081",
+  "provider": "gemini",
+  "comment": "Machine-wide default for g5-codex / g5-copilot / g5-gemini. On Lion this file lives in /Users/Shared/ai-cockpit/ and points at this machine's LAN address instead of localhost."
+}
