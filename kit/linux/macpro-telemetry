@@ -89,7 +89,11 @@ def collect_memory():
             "disksize_mb": round((num(zdisk, 0) or 0) / 1048576, 1),
             "original_mb": round((orig or 0) / 1048576, 1),
             "compressed_mb": round(compr / 1048576, 1),
-            "ratio": round((orig / compr), 2) if compr else None,
+            # Only meaningful once something is actually swapped. With ~0 bytes
+            # stored the division produces a nonsense figure (69.42x on an idle
+            # machine), which reads like real data in the UI.
+            "ratio": (round(orig / compr, 2)
+                      if compr > 1048576 and orig > 1048576 else None),
         }
 
     return {

@@ -1,0 +1,10 @@
+continue.continue@2.0.0
+eamodio.gitlens@19.0.1
+esbenp.prettier-vscode@12.4.0
+mechatroner.rainbow-csv@3.24.1
+ms-python.debugpy@2026.6.0
+ms-python.python@2026.4.0
+ms-python.vscode-python-envs@1.36.0
+redhat.vscode-yaml@1.24.0
+tamasfe.even-better-toml@0.21.2
+timonwong.shellcheck@0.39.5
