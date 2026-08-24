@@ -2,7 +2,29 @@
 
 Read this before putting anything important on this machine.
 
-Measured on 2026-08-19 with `smartctl`. These are the real values, not estimates.
+Measured with `smartctl`. These are the real values, not estimates.
+
+> ## UPDATE 2026-08-24 — the Lion drive is now failing, not merely worn
+>
+> Copying the 200 GB off it measurably damaged it further:
+>
+> | | 2026-08-19 | after the copy |
+> |---|---|---|
+> | `Current_Pending_Sector` | **0** | **4** |
+> | `Reported_Uncorrect` | 2,814 | **2,839** |
+>
+> `Current_Pending_Sector` above zero means sectors are failing **now**, not in
+> the past. That is the threshold at which this document previously said "stop
+> using the drive", and it has been crossed. SMART still reports `PASSED`, which
+> is a good illustration of how narrow that verdict is.
+>
+> **The data was copied off in time** (see below — 201 GB, verified folder by
+> folder, only two unreadable files and both recovered). Do not read from this
+> drive again except in an emergency: every pass costs more sectors. It is
+> mounted read-only and `noauto` in `/etc/fstab` for that reason.
+>
+> Replace it. Nothing on this machine's Debian side lives there, so replacing it
+> costs only the screws.
 
 ---
 
