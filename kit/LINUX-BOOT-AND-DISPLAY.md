@@ -64,7 +64,37 @@ $ cat /sys/class/graphics/fb0/virtual_size
 
 A working 2560×1440 text console, and no `radeon` in `lsmod` at all.
 
-## 3. Do NOT set `GRUB_GFXPAYLOAD_LINUX=keep`
+## 3. `gfxpayload` must be pinned to `text` — unset is nearly as bad as `keep`
+
+This caused a second, longer hunt after the memory fault was fixed, so it is
+worth stating precisely.
+
+**Symptom:** cold boot, press Enter on the GRUB menu, a single underscore
+appears, then black. No kernel output at all, no network, fans quiet, and **no
+`T_FAULT`** — so it is not the memory fault in §11. Roughly **two cold boots in
+three** failed this way; the third would boot perfectly.
+
+**Proof it never reached userspace:** `journalctl --list-boots` showed no record
+whatsoever for the failed attempts. The kernel was hanging before journald
+started.
+
+**Cause:** the ESP boot menu did not set `gfxpayload` at all. Debian's own
+`/etc/default/grub` had `text`, but the ESP menu is what actually boots this
+machine, and there GRUB was free to choose. An unpinned handover hangs the
+kernel before it prints a character — intermittently, which is what made it so
+hard to pin down.
+
+**Fix**, now present both globally and inside `find_debian` in
+`/boot/efi/EFI/BOOT/grub.cfg`:
+
+```
+set gfxpayload=text
+```
+
+If you ever rebuild that menu, keep it. Test it by cold booting three times, not
+once: a single success proves nothing when the failure rate is 2 in 3.
+
+## 3b. Do NOT set `GRUB_GFXPAYLOAD_LINUX=keep`
 
 This is worth its own section because it wasted hours and looks like the
 opposite problem.
@@ -436,3 +466,25 @@ boot failed.
 
 And when Linux fails but macOS boots, **suspect memory before software.** The
 asymmetry is a symptom, not a contradiction.
+
+
+---
+
+# 12. The clock is 4 hours out after switching OS
+
+Lion writes **local time** to the hardware clock; Debian expects **UTC**. So each
+one leaves the RTC in a form the other misreads, and early boot timestamps land
+4 hours in the future — visible as `journalctl --list-boots` showing a FIRST
+ENTRY later than its LAST ENTRY.
+
+Debian is now configured to treat the RTC as UTC, which matches what it
+contains:
+
+```bash
+sudo timedatectl set-local-rtc 0 --adjust-system-clock
+timedatectl        # want: "RTC in local TZ: no"
+```
+
+Both systems run NTP, so both correct themselves within a minute of booting.
+The only lasting artifact is odd timestamps in the first moments of a boot log.
+Harmless, but worth recognising rather than chasing.
