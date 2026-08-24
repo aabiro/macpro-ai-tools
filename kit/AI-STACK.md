@@ -377,3 +377,92 @@ just not self-sufficient.
 
 Because the gateway is the thing that needs TLS 1.2, and Lion is the machine
 that cannot do TLS 1.2. Running it there would defeat its only purpose.
+
+---
+
+## Modernisation beyond the AI stack
+
+Added because they change what this 2006 machine can actually do, not because
+they are new.
+
+### Containers — the answer to "why not a newer distro"
+
+**`podman 5.4.2` runs containers on this x86-64-v1 CPU.** Verified, not assumed:
+it pulled and ran `alpine` successfully. So anything too new for Debian 13 can
+run here anyway, without touching the host.
+
+`distrobox 1.8.1.2` goes further: it runs another distribution's **userland** in
+a container, tightly integrated with your home directory.
+
+```bash
+distrobox create --name ubuntu --image docker.io/library/ubuntu:26.04
+distrobox enter ubuntu
+```
+
+That gives you Ubuntu 26.04's packages on this machine **without reinstalling
+anything and without touching the boot path** — which matters, because the boot
+path on this machine is the fragile part (see §13). If something is only
+packaged for Ubuntu, this is how to run it.
+
+`buildah` and `skopeo` are installed for building and moving images.
+
+### Cockpit — system administration in a browser
+
+```
+http://<this-machine>:9090/
+```
+
+Log in with the `macpro` account. Manage services, storage, networking, logs,
+updates and terminal sessions from a browser, on any device. For someone new to
+Linux this is the difference between learning `systemctl` and clicking a switch.
+
+Not to be confused with the **AI Cockpit** on port 3000 — different thing, same
+unfortunate word. This one is Red Hat's system admin console, from Debian.
+
+### Snapshots — undo a bad change
+
+`timeshift 24.06.6` in rsync mode, with a baseline snapshot of the fully
+configured system:
+
+```bash
+sudo timeshift --list                       # what exists
+sudo timeshift --create --comments "before I try something"
+sudo timeshift --restore                    # roll back
+```
+
+**A snapshot is not a backup.** These live on the same disk, so they protect
+against a bad configuration change, not against the disk dying. Backups still
+belong on external media — see [DISK-HEALTH-AND-BACKUP.md](DISK-HEALTH-AND-BACKUP.md).
+
+### Hardening and housekeeping
+
+| | |
+|---|---|
+| `fail2ban` | bans repeated failed SSH logins. SSH is open to the LAN, so this matters. |
+| `lynis` | security audit — run `sudo lynis audit system` for a report |
+| `needrestart` | tells you which services need restarting after an update |
+| `fwupd` | firmware updates where a vendor provides them; it does enumerate this Mac's devices |
+| `unattended-upgrades` | security patches apply themselves |
+
+### Also available
+
+`syncthing` (installed, not enabled — file sync between machines), `flatpak`
+(alternative app distribution), `zsh` + `zoxide`, `plocate`.
+
+## The firewall, corrected
+
+`/etc/nftables.conf` was found to be **missing the DHCP rule** that this
+documentation had described for weeks — the corrected version had been written
+to the repository but never installed on the machine. Without it the machine
+loses its address on the next cold boot, which is indistinguishable from a dead
+machine.
+
+Now deployed and verified, with 9090 added for Cockpit:
+
+```
+udp dport 68 accept          # DHCPv4 -- reply is a different tuple, so
+udp dport 546 accept         # `ct state established` does NOT cover it
+tcp dport { 22, 3000, 8081, 8443, 9090, 24800 }   from 192.168.0.0/16
+```
+
+Applied with a 90-second auto-rollback in case it locked out SSH. It did not.
