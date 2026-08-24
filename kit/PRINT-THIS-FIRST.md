@@ -113,6 +113,10 @@ Everything below is already working. You do not have to install anything.
 
 ## The AI assistants
 
+**All four AI assistants are in the editor too** — Copilot is built in, and
+Claude, Gemini and ChatGPT/Codex are installed as extensions. Signing in to each
+is covered in ACCOUNTS-AND-SIGN-IN.md.
+
 | Command | What it is |
 |---|---|
 | `claude` | Claude Code. A coding and general assistant that runs in a Terminal window. |
@@ -143,7 +147,7 @@ which nothing else does. They send their questions through the gateway below.
 | Address | What it is |
 |---|---|
 | `:3000` | **The AI Cockpit.** Chat, a machine health page, and a tool that rewrites modern code so it runs on the 2006 Mac system. |
-| `:8443` | **The Code Editor.** A full editor in a browser. Works from your laptop too. |
+| `:8443` | **Visual Studio Code.** The real thing, in a browser. Works from your laptop too. Needs the access token — see below. |
 | `:8081` | **The AI Gateway.** Not something you visit. It lets the old Mac OS X side reach modern AI services, which it cannot do on its own. |
 
 Type `ai help` to see the exact addresses for this machine.
@@ -228,7 +232,8 @@ Everything is on the machine. Open a Terminal and type:
 ls /usr/local/share/doc/macpro/kit/
 ```
 
-Start with **NEW-OWNER-START-HERE.md**, then **FIRST-RUN-CHECKLIST.md**.
+Start with **NEW-OWNER-START-HERE.md**, then **ACCOUNTS-AND-SIGN-IN.md** (which
+account each tool needs), then **FIRST-RUN-CHECKLIST.md**.
 
 If the machine will not start at all, those same files are in the project
 repository under `docs/g5-handoff/kit/`.

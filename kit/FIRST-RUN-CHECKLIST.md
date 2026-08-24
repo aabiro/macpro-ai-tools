@@ -21,7 +21,7 @@ machine has no AI capability, no remote access, and no backups.
 |---|---|---|
 | 0 | **Revoke build-time access** | nothing — do this before anything else |
 | 1 | **Model API keys** | your provider accounts |
-| 2 | **code-server password** | already generated; change it if you like |
+| 2 | **The editor** | token in `~/.vscode-web/connection-token`; sign in to each AI extension |
 | 3 | **Tailscale** | your own tailnet |
 | 4 | **Ports / firewall** | nothing — read before opening anything |
 | 5 | **Offsite backups to B2** | your own bucket |
@@ -75,16 +75,22 @@ export GEMINI_API_KEY=...
 The `g5-*` tools do **not** need this — they go through the gateway and use its
 keys. That is the whole point of them, and it is why they work on Lion.
 
-## 2. code-server password — already set
+## 2. The editor — official Visual Studio Code
 
-A random password was generated at install. Read it:
+Installed as a desktop app, and served in a browser on port 8443 by
+`vscode-web.service`. It is the real Microsoft build, so **GitHub Copilot works**
+(it ships built in) alongside the Claude, Gemini and ChatGPT extensions.
+
+To open it from another computer, read the access token:
 
 ```bash
-sudo grep password: /home/macpro/.config/code-server/config.yaml
+cat ~/.vscode-web/connection-token
 ```
 
-Then open `http://<machine-ip>:8443/`. Change it by editing that file and
-running `sudo systemctl restart code-server`.
+then browse to `http://<this-machine-ip>:8443/?tkn=<that-token>`.
+
+Signing in to each AI extension is covered in
+[ACCOUNTS-AND-SIGN-IN.md](ACCOUNTS-AND-SIGN-IN.md).
 
 ## 3. Tailscale — do this early
 
@@ -139,7 +145,7 @@ The nftables ruleset and the tailnet are what keep it safe.
 | 22 | SSH | LAN + tailnet |
 | 3000 | cockpit web console | LAN + tailnet |
 | 8081 | AI gateway | LAN + tailnet |
-| 8443 | code-server (editor) | LAN + tailnet |
+| 8443 | Visual Studio Code (browser) | LAN + tailnet |
 | 41641/udp | Tailscale | anywhere (by design) |
 
 Everything else is dropped. The ruleset lives in `/etc/nftables.conf`; to open
@@ -169,20 +175,25 @@ sed -i '/aaryn.alexander@gmail.com/d' ~/.ssh/authorized_keys
 `macpro` stays in the `sudo` group and will be asked for a password — the normal
 Debian arrangement.
 
-## 6. Optional: offsite backups
+## 6. Backups — an external drive is the right answer
 
-`restic` is not installed. If you want encrypted offsite snapshots, the project
-already has Backblaze B2 credentials for the `ca-east-006` region. Sketch:
+**You do not need a cloud subscription.** Plug in an external USB drive and copy
+to it. `rclone` is installed and handles both external drives and cloud storage:
 
 ```bash
-sudo apt install restic
-export B2_ACCOUNT_ID=...  B2_ACCOUNT_KEY=...
-restic -r b2:your-bucket:macpro init
-restic -r b2:your-bucket:macpro backup /home/macpro/projects
+lsblk                                    # find the drive you plugged in
+sudo mkdir -p /mnt/ext
+sudo mount /dev/disk/by-label/YOURDRIVE /mnt/ext
+rsync -a --info=progress2 --partial --ignore-errors ~/ /mnt/ext/macpro-backup/
 ```
 
-Left out deliberately — it needs bucket credentials and a decision about what is
-worth backing up, both of which are the owner's call.
+Cloud is optional and costs money: Backblaze B2 is about **$6 per TB per month**
+after a free first 10 GB, and needs a card on file. If you want it, `rclone
+config` walks you through it.
+
+**Read [DISK-HEALTH-AND-BACKUP.md](DISK-HEALTH-AND-BACKUP.md) first** — one of
+the two drives in this machine is failing, and that document explains which and
+what to do about it.
 
 ## 7. Where to read next
 
