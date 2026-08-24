@@ -205,3 +205,65 @@ for: conversation, code, or anything you are waiting on.
 
 A faster local model needs different hardware, not different software — see
 [HARDWARE-UPGRADE-PATH.md](HARDWARE-UPGRADE-PATH.md).
+
+---
+
+## Lion's AI tools need a gateway on ANOTHER machine — a design constraint
+
+This is the one structural gap in the kit, and it is worth understanding before
+anyone spends time on it.
+
+**The premise:** OS X 10.7 Lion has Python 2.7 with OpenSSL 0.9.8, which cannot
+negotiate TLS 1.2. It physically cannot reach any modern model API. So the kit
+gives it `g5-codex`, `g5-copilot` and `g5-gemini`, which send their requests to
+`aigw.py` — a gateway that does the TLS on Lion's behalf.
+
+**The problem:** the gateway runs on the Debian side of this machine, and Lion
+and Debian are the same computer. They never run at the same time. **When Lion is
+booted, the gateway is switched off with it.**
+
+So out of the box, Lion's AI tools have nothing to talk to. `g5-config show` on
+Lion shows an empty gateway, and that is not a misconfiguration — there is
+genuinely nothing local to point it at.
+
+### What actually works
+
+Run the gateway on **any other machine on the network** — a laptop, a NAS, a
+Raspberry Pi, anything with Python 3. `aigw.py` has **zero dependencies**:
+
+```bash
+# on the other machine, once:
+export GEMINI_API_KEY=...          # or ANTHROPIC_API_KEY / OPENAI_API_KEY
+python3 aigw.py --host 0.0.0.0 --port 8081
+```
+
+A copy of `aigw.py` is on Lion at `/Users/Shared/ai-cockpit/gateway/aigw.py`
+and on the Debian side at `/opt/ai-cockpit/aigw.py`. Copy it anywhere.
+
+Then, on Lion:
+
+```bash
+g5-config set gateway http://<that-machine's-ip>:8081
+g5-config test
+```
+
+### If there is no other machine
+
+Then Lion has no AI, and that is a hardware fact rather than something to fix.
+The options are:
+
+| Option | Notes |
+|---|---|
+| Use the Debian side for AI | It has everything. This is the sane answer. |
+| Run the gateway on a laptop when you want Lion's AI | Works, but only while the laptop is on. |
+| Newer macOS on this machine | Needs different CPUs — see HARDWARE-UPGRADE-PATH.md. Even then Lion itself stays stuck. |
+
+**`retro-port` and `g5-doctor` still work without a gateway** for their offline
+parts, and `g5-doctor --raw` produces a diagnostic dump you can paste into the
+cockpit's Custodian tab from any browser. So Lion is not useless without it —
+just not self-sufficient.
+
+### Why not run the gateway on Lion itself?
+
+Because the gateway is the thing that needs TLS 1.2, and Lion is the machine
+that cannot do TLS 1.2. Running it there would defeat its only purpose.
