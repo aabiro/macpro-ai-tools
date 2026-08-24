@@ -107,6 +107,63 @@ the machine; `ai help` tells you where.
 
 ---
 
+# What is installed on this machine
+
+Everything below is already working. You do not have to install anything.
+
+## The AI assistants
+
+| Command | What it is |
+|---|---|
+| `claude` | Claude Code. A coding and general assistant that runs in a Terminal window. |
+| `claude-dark20` | The same thing with a dark colour scheme. |
+| `claude-desktop` | Claude as a normal window with buttons, rather than in a Terminal. |
+| `gemini` | Google's assistant, in a Terminal. Has a free option. |
+| `codex` | OpenAI's coding assistant, in a Terminal. |
+| `aider` | Edits files in a project for you, guided by conversation. |
+| `gh` | GitHub from the command line. |
+
+## Made for this machine
+
+| Command | What it is |
+|---|---|
+| `ai` | **Start here.** Tells you what to do next, and fixes things. |
+| `g5-copilot` | Ask "how do I …?" and it suggests a command. **It never runs it.** |
+| `g5-codex` | Ask it to change a file. It shows you the change before applying it. |
+| `g5-gemini` | A conversation, in plain text. |
+| `ai-session` | A work session that survives closing the window. |
+| `macpro-doctor` | Full health report on the hardware. |
+| `macpro-telemetry` | The same information as data, refreshed every 5 minutes. |
+
+The three `g5-` tools also work on the **old Mac OS X side** of this machine,
+which nothing else does. They send their questions through the gateway below.
+
+## The web apps
+
+| Address | What it is |
+|---|---|
+| `:3000` | **The AI Cockpit.** Chat, a machine health page, and a tool that rewrites modern code so it runs on the 2006 Mac system. |
+| `:8443` | **The Code Editor.** A full editor in a browser. Works from your laptop too. |
+| `:8081` | **The AI Gateway.** Not something you visit. It lets the old Mac OS X side reach modern AI services, which it cannot do on its own. |
+
+Type `ai help` to see the exact addresses for this machine.
+
+## Running quietly in the background
+
+| | |
+|---|---|
+| **rasdaemon** | Watches the memory for errors. This is the early warning for the fault described overleaf. |
+| **Automatic security updates** | Applied without you doing anything. |
+| **Firewall** | Only your home network can reach this machine. Nothing is exposed to the internet. |
+| **A local AI model** | Works with no internet at all, but is very slow (about a word per second). For emergencies. |
+
+## Also installed
+
+A web browser (Firefox), a terminal, a file manager, and the usual desktop
+applications. Python and Node are installed for programming.
+
+---
+
 # If something goes wrong
 
 ## The screen is black and the fans are LOUD and never quieten
@@ -152,7 +209,14 @@ graphics card has no modern driver. That is normal here, not a fault.
 **One of the two hard disks is worn.** The disk holding the old Mac system has
 failed to read data thousands of times over its life. It still works, but
 **nothing on it is backed up.** Do not store anything on this machine that does
-not exist somewhere else, and set up backups early.
+not exist somewhere else.
+
+**The simplest backup is an external USB drive.** Plug one in, and copy your
+work to it. No accounts, no subscription, no internet needed. A 1 TB drive costs
+about the same as two months of coffee and is the right answer for this machine.
+
+Cloud backup is optional and costs money -- see the full documentation if you
+want it. You do not need it to use this machine safely.
 
 ---
 

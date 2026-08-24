@@ -8,9 +8,10 @@ Measured on 2026-08-19 with `smartctl`. These are the real values, not estimates
 
 ## The two drives
 
-| | `/dev/sda` — Debian | `/dev/sdb` — Mac OS X Lion |
+| | **Debian drive** | **Lion drive** |
 |---|---|---|
 | Model | ST31000333AS | SAMSUNG HD103SI |
+| Identify it by | ext4, mounted at `/` | hfsplus, label `Lion` |
 | Capacity | 1.00 TB | 1.00 TB |
 | SMART verdict | PASSED | PASSED |
 | Power-on hours | 20,274 (2.3 years) | 20,870 (2.4 years) |
@@ -25,10 +26,10 @@ Measured on 2026-08-19 with `smartctl`. These are the real values, not estimates
 
 **Reallocated sectors.** The disk surface is divided into sectors. When one fails,
 the drive swaps in a spare from a reserve pool and remaps it, silently. The count
-is a tally of how many times the drive has patched around physical damage. `sda`'s
-8 is unremarkable for a drive this age. `sdb`'s 255 is a lot.
+is a tally of how many times the drive has patched around physical damage. The
+Debian drive's 8 is unremarkable for its age. The Lion drive's 255 is a lot.
 
-**255 probably means "255 or more."** Both counters on `sdb` read exactly 255,
+**255 probably means "255 or more."** Both counters on the Lion drive read exactly 255,
 which is the ceiling of an 8-bit field. When two independent counters saturate at
 the same round number, the real figure is likely higher and simply cannot be
 represented in the attribute.
@@ -44,7 +45,7 @@ narrow question and this drive passes it. It is not a statement that the drive i
 healthy.
 
 **Cable errors are 0 on both**, which rules out the SATA cabling as a cause and
-points the finger squarely at the `sdb` platter surface.
+points the finger squarely at the Lion drive's platter surface.
 
 ## There is no backup. This is the important part.
 
@@ -55,9 +56,9 @@ remains:
 
 ```
 $ lsblk -o NAME,SIZE,FSTYPE,LABEL
-sdb
-├─sdb1   200M vfat     EFI
-└─sdb2 931.2G hfsplus  Lion      <- the only copy of this data
+sda                                        <- letter varies between boots
+├─sda1   200M vfat     EFI
+└─sda2 931.2G hfsplus  Lion                <- the only copy of this data
 ```
 
 It is worth being blunt: even while `Liferaft` existed it was on the **same
@@ -69,14 +70,32 @@ uncorrectable reads, with no copy anywhere.
 
 ## What to do about it
 
-**First, and before anything else: copy that data off the machine.** An external
-USB drive is the simplest route. From Linux the Lion volume can be mounted
-read-only, which is the safest way to read from a suspect disk:
+**First, and before anything else: copy that data off the machine.**
+
+> ### Device names are NOT stable on this machine
+>
+> `sda` and `sdb` **swap between boots.** They were Debian=sda / Lion=sdb, and
+> after a hardware reseat they became Lion=sda / Debian=sdb. Earlier versions of
+> these docs hardcoded `/dev/sdb2` for Lion, which after that swap pointed at
+> Debian's root filesystem instead. On a worn disk holding the only copy of
+> someone's files, that class of instruction destroys data.
+>
+> **Always identify the disk by label or filesystem, never by letter:**
+>
+> ```bash
+> lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINT   # look, every time
+> ```
+>
+> Lion is the **hfsplus** partition labelled **Lion**. Debian is the **ext4**
+> one mounted at **/**.
+
+Mount it read-only, by label, which is safe whichever letter it has today.
+Lion's journal is dirty, so `force` is required — this stays read-only:
 
 ```bash
 sudo mkdir -p /mnt/lion
-sudo mount -o ro /dev/sdb2 /mnt/lion
-# then copy /mnt/lion/Users/... to external storage
+sudo mount -t hfsplus -o ro,force /dev/disk/by-label/Lion /mnt/lion
+df -h /mnt/lion            # confirm you got a ~932G volume before copying
 ```
 
 Use `rsync` rather than a file manager, so an unreadable file logs an error and
@@ -89,10 +108,61 @@ rsync -a --info=progress2 /mnt/lion/Users/ /media/your-external-drive/lion-backu
 Expect some files to fail. Those are the 2,814 events, made visible. Note which
 ones, so you know what was lost rather than discovering it years later.
 
-**Then set up ongoing backups** — step 5 of
-[FIRST-RUN-CHECKLIST.md](FIRST-RUN-CHECKLIST.md).
+### Where to copy it to
 
-**Do not reformat or reinstall over `sdb2` until that copy exists.**
+**An external USB drive is the best answer**, and the one to reach for first:
+
+```bash
+lsblk                                    # find the drive you just plugged in
+sudo mkdir -p /mnt/ext
+sudo mount /dev/disk/by-label/YOURDRIVE /mnt/ext
+sudo rsync -a --info=progress2 --partial --append-verify --ignore-errors \
+     /mnt/lion/Users/ /mnt/ext/lion-backup/Users/
+```
+
+`--ignore-errors` matters here: with 2,814 recorded read failures, some files
+**will** be unreadable. Without it one bad file aborts the whole copy. With it,
+the copy continues and names the failures in its output — note them, so you know
+what was lost rather than discovering it in five years.
+
+`--partial --append-verify` makes it resumable, so an interrupted run continues
+rather than starting again.
+
+**Over the network to another computer** works too, same flags:
+
+```bash
+rsync -a --info=progress2 --partial --append-verify --ignore-errors \
+     /mnt/lion/Users/ user@other-machine:/path/lion-backup/Users/
+```
+
+Expect roughly **25 MB/s**, so about 2.5 hours for 233 GB. That is the limit of
+a worn 2009 drive in a 2006 machine, not the network.
+
+### Cloud backup: what it actually costs
+
+Offered as an option, not a requirement. **You do not need it to use this
+machine safely** — an external drive is enough.
+
+If you want offsite copies, Backblaze B2 is the cheapest sensible choice:
+
+| | |
+|---|---|
+| First 10 GB | free |
+| Storage after that | about **$6 per TB per month** |
+| So 233 GB | roughly **$1.40 a month** |
+| Downloading it back | free up to 3x your stored amount |
+
+It needs an account with a card on file. `restic` is the tool that talks to it:
+
+```bash
+sudo apt install restic
+```
+
+Full setup is in [FIRST-RUN-CHECKLIST.md](FIRST-RUN-CHECKLIST.md) step 5. If you
+would rather not have a subscription, use the external drive and skip this
+entirely — that is a perfectly good answer.
+
+**Do not reformat or reinstall over the Lion volume until that copy exists.**
 
 ## Should the drive be replaced?
 
@@ -101,7 +171,7 @@ takes four of them. But the order matters — **copy the data first, replace
 second.** A drive with this history can deteriorate quickly, and the worst
 outcome is losing the data while trying to improve the hardware.
 
-`sda`, which holds Debian, is in good shape. If `sdb` is replaced, everything
+The Debian drive is in good shape. If the Lion drive is replaced, everything
 described in [AI-STACK.md](AI-STACK.md) keeps working untouched, because none of
 it lives there.
 

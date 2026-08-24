@@ -125,6 +125,66 @@ http://&lt;this machine&#x27;s address&gt;:8443     the code editor
 
 <hr>
 
+<h1>What is installed on this machine</h1>
+
+<p>Everything below is already working. You do not have to install anything.</p>
+
+<h2>The AI assistants</h2>
+
+<table>
+<tr><td>Command</td><td>What it is</td></tr>
+<tr><td><code>claude</code></td><td>Claude Code. A coding and general assistant that runs in a Terminal window.</td></tr>
+<tr><td><code>claude-dark20</code></td><td>The same thing with a dark colour scheme.</td></tr>
+<tr><td><code>claude-desktop</code></td><td>Claude as a normal window with buttons, rather than in a Terminal.</td></tr>
+<tr><td><code>gemini</code></td><td>Google's assistant, in a Terminal. Has a free option.</td></tr>
+<tr><td><code>codex</code></td><td>OpenAI's coding assistant, in a Terminal.</td></tr>
+<tr><td><code>aider</code></td><td>Edits files in a project for you, guided by conversation.</td></tr>
+<tr><td><code>gh</code></td><td>GitHub from the command line.</td></tr>
+</table>
+
+<h2>Made for this machine</h2>
+
+<table>
+<tr><td>Command</td><td>What it is</td></tr>
+<tr><td><code>ai</code></td><td><strong>Start here.</strong> Tells you what to do next, and fixes things.</td></tr>
+<tr><td><code>g5-copilot</code></td><td>Ask "how do I …?" and it suggests a command. <strong>It never runs it.</strong></td></tr>
+<tr><td><code>g5-codex</code></td><td>Ask it to change a file. It shows you the change before applying it.</td></tr>
+<tr><td><code>g5-gemini</code></td><td>A conversation, in plain text.</td></tr>
+<tr><td><code>ai-session</code></td><td>A work session that survives closing the window.</td></tr>
+<tr><td><code>macpro-doctor</code></td><td>Full health report on the hardware.</td></tr>
+<tr><td><code>macpro-telemetry</code></td><td>The same information as data, refreshed every 5 minutes.</td></tr>
+</table>
+
+<p>The three <code>g5-</code> tools also work on the <strong>old Mac OS X side</strong> of this machine,</p>
+<p>which nothing else does. They send their questions through the gateway below.</p>
+
+<h2>The web apps</h2>
+
+<table>
+<tr><td>Address</td><td>What it is</td></tr>
+<tr><td><code>:3000</code></td><td><strong>The AI Cockpit.</strong> Chat, a machine health page, and a tool that rewrites modern code so it runs on the 2006 Mac system.</td></tr>
+<tr><td><code>:8443</code></td><td><strong>The Code Editor.</strong> A full editor in a browser. Works from your laptop too.</td></tr>
+<tr><td><code>:8081</code></td><td><strong>The AI Gateway.</strong> Not something you visit. It lets the old Mac OS X side reach modern AI services, which it cannot do on its own.</td></tr>
+</table>
+
+<p>Type <code>ai help</code> to see the exact addresses for this machine.</p>
+
+<h2>Running quietly in the background</h2>
+
+<table>
+<tr><td><strong>rasdaemon</strong></td><td>Watches the memory for errors. This is the early warning for the fault described overleaf.</td></tr>
+<tr><td><strong>Automatic security updates</strong></td><td>Applied without you doing anything.</td></tr>
+<tr><td><strong>Firewall</strong></td><td>Only your home network can reach this machine. Nothing is exposed to the internet.</td></tr>
+<tr><td><strong>A local AI model</strong></td><td>Works with no internet at all, but is very slow (about a word per second). For emergencies.</td></tr>
+</table>
+
+<h2>Also installed</h2>
+
+<p>A web browser (Firefox), a terminal, a file manager, and the usual desktop</p>
+<p>applications. Python and Node are installed for programming.</p>
+
+<hr>
+
 <h1>If something goes wrong</h1>
 
 <h2>The screen is black and the fans are LOUD and never quieten</h2>
@@ -170,7 +230,14 @@ ai check
 <p><strong>One of the two hard disks is worn.</strong> The disk holding the old Mac system has</p>
 <p>failed to read data thousands of times over its life. It still works, but</p>
 <p><strong>nothing on it is backed up.</strong> Do not store anything on this machine that does</p>
-<p>not exist somewhere else, and set up backups early.</p>
+<p>not exist somewhere else.</p>
+
+<p><strong>The simplest backup is an external USB drive.</strong> Plug one in, and copy your</p>
+<p>work to it. No accounts, no subscription, no internet needed. A 1 TB drive costs</p>
+<p>about the same as two months of coffee and is the right answer for this machine.</p>
+
+<p>Cloud backup is optional and costs money -- see the full documentation if you</p>
+<p>want it. You do not need it to use this machine safely.</p>
 
 <hr>
 

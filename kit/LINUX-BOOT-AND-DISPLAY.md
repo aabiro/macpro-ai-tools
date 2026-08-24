@@ -157,11 +157,16 @@ Debian's loader reads `/boot/grub/grub.cfg` instead of the ESP menu.
 ## 7. Machine facts worth having written down
 
 ```
-root filesystem : /dev/sda2  ext4   (GRUB: hd1,gpt2)
-root UUID       : 9ebf7afb-2b9f-4c0d-aa88-d9f542f60901
-ESP             : /dev/sda1  vfat   mounted at /boot/efi
-swap            : /dev/sda3  6 GB
-Mac OS X (Lion) : /dev/sdb2  hfsplus 931 GB   -- do not touch
+root filesystem : ext4, UUID 9ebf7afb-2b9f-4c0d-aa88-d9f542f60901  (GRUB: hd1,gpt2)
+ESP             : vfat,  mounted at /boot/efi
+swap            : 6 GB   (same disk as root)
+Mac OS X (Lion) : hfsplus, label "Lion", 931 GB  -- do not touch
+
+*** DEVICE LETTERS ARE NOT STABLE. sda and sdb swap between boots: they were
+    Debian=sda/Lion=sdb, then after a hardware reseat became Lion=sda/Debian=sdb.
+    Never write a command against a letter. Always check first:
+        lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINT
+    and address disks as /dev/disk/by-label/Lion or by UUID. ***
 kernel          : 6.12.101+deb13-amd64  (6.12.94 also installed as fallback)
 hostname/user   : macpro / macpro
 GPU             : 08:00.0 R580 [Radeon X1900 XT] [1002:7249]
@@ -170,15 +175,18 @@ RAM             : 8 GB DDR2 FB-DIMM ECC (8x1GB, all slots). NOTE: DIMM A4 had a
                   marginal contact that broke every Linux boot -- see §11
 ```
 
-**Disk naming is counter-intuitive and has caused mistakes:** Linux calls the
-Debian disk `sda` and the Lion disk `sdb`, which is the opposite order to macOS,
-where Lion is `disk0`. Confirm by partition count — Debian's disk has three
-partitions, Lion's has two:
+**Disk naming has caused real mistakes here, twice.** The letters are assigned in
+whatever order the SATA controller enumerates, and that order has already changed
+once on this machine. Identify by **partition count and filesystem**, which do not
+change:
 
 ```
-sda: sda1 sda2 sda3      <- Debian
-sdb: sdb1 sdb2           <- Lion
+three partitions, ext4 + vfat + swap   -> Debian
+two partitions,   vfat + hfsplus       -> Lion
 ```
+
+Earlier versions of this document hardcoded `/dev/sdb2` as Lion. After the
+letters swapped, that same command pointed at Debian's root. Use labels.
 
 ## 8. Node.js — why the distro package matters
 
