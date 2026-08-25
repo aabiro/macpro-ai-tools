@@ -364,11 +364,56 @@ Evidence pointing at the graphics card:
   responding, rather than a wrong value
 - the fault is intermittent, which is how a marginal card behaves
 - it began after a mains power cut
-- memory tests clean (all 6 DIMMs `Status: OK`, ECC enabled, zero panics), both
-  1 TB drives healthy, and the OS runs for hours once booted
+- memory tests clean (all 6 DIMMs `Status: OK`, ECC enabled, zero panics), and
+  the OS runs for hours once booted
 
 Cheap things to try first: **reseat the graphics card and the FB-DIMMs.**
 Oxidised contacts after a power event are common and free to rule out.
+
+### A second candidate nobody had connected: the boot drive itself
+
+Found later, while reading logs rather than looking for it. `smartd` flags the
+Debian disk on every boot:
+
+```
+Device: /dev/sda [SAT], WARNING: There are known problems with these drives
+```
+
+It is a **Seagate Barracuda 7200.11, ST31000333AS, firmware LC15** — the family
+notorious for a firmware defect that makes the drive undetectable at power-on.
+This machine boots from it.
+
+**Be careful with how much weight that carries.** The famous 7200.11 failures
+(the "BSY" and "0-LBA" bugs) are *permanent* once triggered: the drive stops
+being detected and stays that way until repaired over a serial console. They do
+not come back by themselves. So they do **not** explain a fault that clears on
+the next attempt.
+
+What is suggestive rather than conclusive:
+
+| | |
+|---|---|
+| `Command_Timeout` | **1** — the drive failed to answer a command once |
+| Power-on hours | 20,383 |
+| Power cycles | 5,269 |
+| SMART error log | empty |
+
+A drive that occasionally fails to respond at power-on would produce exactly the
+observed symptom, and this one is 20,000 hours old from a family with known
+firmware problems. That is a mechanism worth adding to the list — not a
+diagnosis, and a weaker candidate than the graphics card, which has direct
+evidence behind it (§1, ROM reading `0xffff`).
+
+**How to separate them**, if someone wants to settle it: the next time the
+machine fails to boot, note whether the fans ramp to full and stay there. That
+ramp is the firmware failing at video POST, and points at the card. A drive that
+does not answer would leave the fans normal and the machine sitting quietly with
+no boot device.
+
+Either way the practical consequence is the same and already handled: **keep
+backups off this machine.** If this drive does brick, Debian and everything
+configured on it goes with it. `backup-now` exists for that reason — see
+[DISK-HEALTH-AND-BACKUP.md](DISK-HEALTH-AND-BACKUP.md).
 
 If it persists, the fix is a replacement card. A Mac-flashed Radeon HD 5770 or
 similar also gets you boot screens, a working `radeon`/`amdgpu` driver, real

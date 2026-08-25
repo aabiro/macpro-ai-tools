@@ -1,0 +1,30 @@
+# Please note that you also need to set appropriate Unix permissions
+# to the drivers directory for these users to have write rights in it
+;   write list = root, @lpadmin
+
+
+# ---------------------------------------------------------------------------
+# Added for this machine: one shared folder, reachable from a Mac or Windows
+# PC on the same network as \\macpro\share (or smb://macpro/share on a Mac).
+#
+# No guest access. Samba keeps its OWN password database, separate from the
+# Linux login password, so the owner must set one before this works:
+#
+#     sudo smbpasswd -a macpro
+#
+# That is deliberately left undone -- nobody should ship a machine with a
+# password somebody else chose.
+# ---------------------------------------------------------------------------
+[share]
+   comment = Shared folder on the Mac Pro
+   path = /srv/share
+   browseable = yes
+   read only = no
+   guest ok = no
+   valid users = macpro
+   create mask = 0664
+   directory mask = 2775
+   # Keep macOS happy: Finder stores metadata in xattrs, and without this it
+   # litters the share with ._ files instead.
+   vfs objects = fruit streams_xattr
+   fruit:metadata = stream

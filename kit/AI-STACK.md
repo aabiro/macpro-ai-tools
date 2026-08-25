@@ -630,6 +630,72 @@ when it exits**, so anything edited while it is running is discarded — stop it
 first, edit, then start it again. Dragging icons by hand works fine and is the
 normal way to change this.
 
+### Wi-Fi — now works, and did not before
+
+The machine has a **Broadcom BCM4321** card that was doing nothing at all: the
+`b43` driver loaded and then failed, because its firmware is not redistributable
+and `firmware-b43-installer` — the package that used to fetch it — **no longer
+exists in Debian 13**.
+
+The route that works is the proprietary `wl` driver:
+
+```bash
+sudo apt install linux-headers-$(uname -r) broadcom-sta-dkms
+```
+
+**The kernel headers are the part that is easy to miss.** Without them DKMS
+reports the module as merely `added` rather than `installed`, `modprobe wl`
+says "module not found", and it looks like a driver incompatibility rather than
+a missing build dependency.
+
+Verified working: the interface appears as **`wls5`**, the radio scans and finds
+networks, and NetworkManager manages it — so Wi-Fi can be joined from the normal
+desktop menu. `broadcom-sta-common` blacklists `b43`, `bcma`, `ssb` and
+`brcmsmac` so the right driver claims the card at boot.
+
+> Wired Ethernet is still the better choice for a desktop that never moves, and
+> is what the machine uses today. Wi-Fi is there for when the cable is not.
+
+### Sharing files with other computers
+
+Two different tools, for two different jobs.
+
+**Samba — a shared folder on the network.** Good for dragging a file across
+once. From a Mac, Finder → Go → Connect to Server:
+
+```
+smb://macpro/share
+```
+
+From Windows: `\\macpro\share`. The folder is `/srv/share` on this machine.
+
+**Samba keeps its own password, separate from the Linux login.** Nothing works
+until the owner sets one — deliberately left undone, because nobody should
+receive a machine with a password somebody else chose:
+
+```bash
+sudo smbpasswd -a macpro
+```
+
+**Syncthing — a folder that stays in sync.** Better for ongoing work: pick a
+folder here and a folder on a laptop, and they mirror each other continuously in
+both directions. No cloud account, no subscription, and the files never leave
+your network.
+
+It runs as the `macpro` user (its whole model is "this user's folders"; a system
+service would sync as root). Open its interface on the machine at:
+
+```
+http://localhost:8384
+```
+
+To pair with a Mac or PC: install Syncthing there, then swap Device IDs between
+the two web interfaces and choose a folder to share. Once paired, dropping a
+file in the folder on either machine makes it appear on the other. Both sides
+have full read/write access — it is a sync, not a one-way copy.
+
+Ports 22000 (transfer) and 21027 (finding other devices) are open on the LAN.
+
 ### Printing and scanning
 
 CUPS is running, with drivers for the common families (Gutenprint covers most
@@ -742,6 +808,43 @@ sudo apt install -t trixie-backports <package>         # take the newer one
 
 `syncthing` (installed, not enabled — file sync between machines), `zsh` +
 `zoxide`, `plocate`, `wmctrl` and `xdotool` (script the desktop from a terminal).
+
+## Log noise that is not worth chasing
+
+A sweep of the journal turned these up. They are recorded so nobody spends an
+afternoon on them twice.
+
+| Message | Verdict |
+|---|---|
+| `i5k_amb ... failed with error -16` | The FB-DIMM temperature sensor cannot claim its I/O region (`-16` is `EBUSY`) because the firmware holds it. `acpi_enforce_resources=lax` on the kernel line would likely fix it and would give per-DIMM temperatures — genuinely useful on a machine with FB-DIMM history. **Not applied**, because this machine has an unexplained intermittent boot fault and adding a kernel parameter would confound that investigation. Worth revisiting once the boot fault is understood. |
+| `pw.conf: can't load config client.conf` | PipeWire is not installed; the portal looks for it anyway. Audio is unaffected — see Sound above. |
+| `alsa-restore.rules: GOTO has no matching label` | A genuinely broken rule Debian ships, ten errors per boot. Overridden in `/etc/udev/rules.d/90-alsa-restore.rules` rather than editing the shipped file, which an upgrade would revert. |
+| `Unknown username "geoclue"` | Location service partially installed. Harmless. |
+| `pam_wtmpdb ... SQLITE_DONE: 8` | Logout time not recorded, twice, at shutdown. The database is healthy and writable and `last` works. A shutdown race; ignore. |
+| `coretemp: Using relative temperature scale` | This CPU has no absolute temperature reference, so readings are approximate. Nothing to fix. |
+| `DOCKER_OPTS` / `smartd_opts` unset | systemd noting an unset optional variable. Cosmetic. |
+| `hid-generic / apple: unknown main item tag 0x0` | The Apple keyboard reports a descriptor field Linux does not recognise. The keyboard works. |
+
+## Should this machine have a mail system?
+
+**No, and it deliberately does not.** No postfix, exim, mailx or msmtp.
+
+The usual argument for one is that system tools mail `root` when something goes
+wrong. That argument fails here twice over: a mail transport is another service
+to keep patched, and **a beginner would never read root's mailbox anyway**. The
+warning would be as invisible as it was before.
+
+So the things that used to mail instead report where a person will actually look:
+
+| | |
+|---|---|
+| Failing disk | writes `DISK-WARNING-READ-ME.txt` to the desktop and pops a notification — see DISK-HEALTH-AND-BACKUP.md |
+| Security updates | `unattended-upgrades` keeps its own log; `ai check` reports it |
+| Anything else | `journalctl -p err -b` shows this boot's errors |
+
+If you later want mail off this machine — to a real address rather than a local
+mailbox — `msmtp` plus an SMTP account is the small answer, and does not involve
+running a mail server. That is a deliberate choice for the owner, not a default.
 
 ## The firewall, corrected
 
