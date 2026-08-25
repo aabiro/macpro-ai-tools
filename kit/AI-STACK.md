@@ -408,6 +408,39 @@ packaged for Ubuntu, this is how to run it.
 
 `buildah` and `skopeo` are installed for building and moving images.
 
+**Docker 26.1.5** and **Docker Compose 2.26.1** are also installed and running,
+because most instructions on the internet say `docker run`, not `podman run`.
+Verified by actually running a container. Podman remains available and is the
+safer of the two — it needs no daemon and no privileged group.
+
+> **Being in the `docker` group is equivalent to being root.** Anyone who can
+> talk to the Docker daemon can mount the host filesystem into a container and
+> write anywhere. That is a property of Docker, not a misconfiguration here.
+> Either use `sudo docker`, or use `podman`, which does not have this problem.
+
+#### What a container can and cannot rescue
+
+This is the part that decides whether a given piece of software will work here,
+and it is easy to get backwards. **A container shares the host's kernel and the
+host's CPU.** It swaps the *userland* — libraries, package versions, distro —
+and nothing else. Measured on this machine:
+
+| | host | inside a container |
+|---|---|---|
+| `sse4_2`, `avx`, `avx2` | absent | **still absent** |
+| glibc | 2.41 | 2.39 in `ubuntu:24.04` |
+
+So:
+
+- **Wrong library or distro version → Docker fixes it.** Anything built for
+  Ubuntu, a newer Python, a newer Node, an old PHP: run it in a container.
+- **Needs AVX or SSE4.2 → Docker cannot help.** The instructions are not there
+  to be virtualised. `mongodb` 5 and later, and official Ollama builds, require
+  AVX and will fail inside a container exactly as they fail outside it.
+
+Worth knowing: Debian 13's glibc 2.41 is *newer* than Ubuntu 24.04's 2.39. The
+host is not the old part of this machine — the CPU is.
+
 ### Cockpit — system administration in a browser
 
 ```
@@ -463,6 +496,27 @@ flatpak update                # update all of them
 > LibreOffice silently does nothing, and **GIMP aborts on startup** while its
 > icon loader fails. Both packages are installed for exactly this reason. If
 > Flatpak apps ever start misbehaving after a reinstall, check these first.
+
+### Desktop icons
+
+The icons on the desktop are grouped in four columns:
+
+| Column | Holds |
+|---|---|
+| 1 | **Start Here**, **AI Terminal**, **AI Cockpit**, and the printable guide |
+| 2 | Firefox, LibreOffice, VLC, GIMP, OpenShot |
+| 3 | VS Code, Files, Terminal |
+| 4 | Home, File System, Trash |
+
+Labels are deliberately one word. Desktop icon labels truncate at about twelve
+characters, so "GIMP — Photo Editor" renders as "GIMP — Pho…", which is worse
+than the bare name. The longer description lives in the hover tooltip.
+
+Positions are stored in
+`~/.config/xfce4/desktop/icons.screen0.yaml`. **xfdesktop rewrites that file
+when it exits**, so anything edited while it is running is discarded — stop it
+first, edit, then start it again. Dragging icons by hand works fine and is the
+normal way to change this.
 
 ### Sound
 
