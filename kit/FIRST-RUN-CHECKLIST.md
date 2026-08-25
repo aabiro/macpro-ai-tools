@@ -30,8 +30,24 @@ machine has no AI capability, no remote access, and no backups.
 
 ## 1. Model API keys — required
 
-Nothing AI-related functions without this. One file feeds both the gateway and
-the web console, so there is a single place to rotate keys.
+Nothing AI-related functions without this.
+
+**Use `ai setup`.** It asks which provider, takes the pasted key, **verifies it
+against the live service, and only saves it if it works** — then restarts the
+services and confirms they picked it up:
+
+```bash
+ai setup
+```
+
+If you have never obtained an API key before, the step-by-step walkthrough —
+which provider to start with, what it costs, how to set a spending limit — is in
+[ACCOUNTS-AND-SIGN-IN.md](ACCOUNTS-AND-SIGN-IN.md). Start there.
+
+### Editing the file by hand instead
+
+Only if you prefer it, or you are adding several keys at once. One file feeds
+both the gateway and the web console, so there is a single place to rotate keys:
 
 ```bash
 sudo nano /etc/ai-cockpit/env

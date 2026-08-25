@@ -77,6 +77,40 @@ Google Gemini has a free option and is the easiest place to start.
 
 That is the whole setup. Everything else is already installed.
 
+### Getting the key to paste — step by step
+
+You need an account with an AI provider, and a "key" from it. A key is a long
+password that lets a program use the AI on your behalf. It is **not** your
+account password, and it is tied to money, so read the cost notes before
+starting.
+
+**The short version, for the free one:**
+
+1. On any computer, go to **aistudio.google.com/apikey**
+2. Sign in with a Google (Gmail) account — make one there if you have none
+3. Click **Create API key** and copy the long string starting `AIza`
+4. On this machine, run `ai setup`, choose Google Gemini, and paste it
+   — paste with **Ctrl+Shift+V**; plain Ctrl+V does not work in a Terminal
+   — you will not see the key appear as you paste; that is normal
+
+**The full guide** — Anthropic, OpenAI and GitHub as well, what each costs, how
+to set a spending limit, how to sign in to the editor extensions, and how to
+recover if a key leaks — is on this machine at:
+
+```
+/usr/local/share/doc/macpro/kit/ACCOUNTS-AND-SIGN-IN.md
+```
+
+Read it with `glow` for a nicely formatted version:
+
+```
+glow /usr/local/share/doc/macpro/kit/ACCOUNTS-AND-SIGN-IN.md
+```
+
+**No key is included with this machine, and no previous owner's account is
+attached to it.** Until you add one, the AI tools start up and politely refuse
+to do anything. That is correct behaviour, not a fault.
+
 ## 5. The only commands worth remembering
 
 Type these in a Terminal:

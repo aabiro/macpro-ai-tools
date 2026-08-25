@@ -299,7 +299,7 @@ rule and SSH key must both be removed, and the rule exists in two places.
 ## Local model (llama.cpp) — installed, measured, and deliberately not wired in
 
 `llama.cpp` is built at `/opt/llama.cpp` with a model at
-`/opt/models/qwen2.5-0.5b-instruct-q4_k_m.gguf`. It works. It is also too slow
+`/opt/models/qwen2.5-0.5b-instruct-q4_0.gguf`. It works. It is also too slow
 to use conversationally, and the numbers are worth recording so nobody re-treads
 this:
 
