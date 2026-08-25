@@ -1,0 +1,25 @@
+[Unit]
+Description=Back up /home and /etc to an external USB drive, if one is present
+Documentation=file:///usr/local/share/doc/macpro/kit/DISK-HEALTH-AND-BACKUP.md
+
+[Service]
+Type=oneshot
+# --auto does nothing at all unless a USB drive labelled MACPRO-BACKUP is
+# plugged in. No drive, or an unlabelled one, means a silent exit 0: this must
+# never nag, and must never guess which USB stick is the backup target.
+ExecStart=/usr/local/bin/backup-now --auto --no-colour
+Nice=15
+IOSchedulingClass=idle
+### ---- timer ----
+[Unit]
+Description=Daily backup attempt (does nothing unless the backup drive is plugged in)
+
+[Timer]
+OnCalendar=daily
+# The machine is not on continuously, so a missed window must still run rather
+# than wait another day.
+Persistent=true
+RandomizedDelaySec=30m
+
+[Install]
+WantedBy=timers.target

@@ -111,7 +111,29 @@ glow /usr/local/share/doc/macpro/kit/ACCOUNTS-AND-SIGN-IN.md
 attached to it.** Until you add one, the AI tools start up and politely refuse
 to do anything. That is correct behaviour, not a fault.
 
-## 5. The only commands worth remembering
+## 5. Backing up — do this before you trust the machine
+
+**One of the two hard disks in this machine is wearing out.** That was true at
+handover and it is documented. It does not stop you using the computer; it does
+mean anything you care about needs a second copy.
+
+Plug in a USB drive and type:
+
+```
+sudo backup-now
+```
+
+It asks which drive, then copies your files. It **never deletes anything**, and
+it **cannot write to the machine's internal disks** — it only ever writes to USB.
+Ctrl-C is safe; running it again carries on where it stopped.
+
+To check afterwards: `backup-now --status`
+
+**If a file called `DISK-WARNING-READ-ME.txt` ever appears on the desktop**, the
+computer is telling you the disk has got worse. Read it. Do a backup that day.
+Do not reinstall anything.
+
+## 6. The only commands worth remembering
 
 Type these in a Terminal:
 
@@ -127,7 +149,7 @@ Type these in a Terminal:
 
 **None of these can break the machine.** There is no delete in any of them.
 
-## 6. In a web browser
+## 7. In a web browser
 
 From this machine, or from a laptop on the same network:
 

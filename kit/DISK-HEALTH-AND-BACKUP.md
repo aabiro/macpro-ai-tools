@@ -130,9 +130,86 @@ rsync -a --info=progress2 /mnt/lion/Users/ /media/your-external-drive/lion-backu
 Expect some files to fail. Those are the 2,814 events, made visible. Note which
 ones, so you know what was lost rather than discovering it years later.
 
+## The one command: `backup-now`
+
+Backing up is now a single command. Plug in a USB drive and run:
+
+```bash
+sudo backup-now
+```
+
+It finds the drive, asks which one if there is more than one, and copies `/home`
+and `/etc` to it. Then:
+
+```bash
+backup-now --status      # when the last backup ran, and whether it worked
+```
+
+Two design decisions are worth knowing, because both protect you:
+
+**It will only ever write to a USB drive.** The check is `ID_BUS=usb` straight
+from udev — not a guess from the device letter. On this machine `sda` and `sdb`
+swap between boots, so "the external one must be `/dev/sdb`" is precisely how
+somebody's only copy of their files gets overwritten. Both internal disks report
+`ID_BUS=ata` and can never be chosen as a target.
+
+**It never deletes.** There is no `--delete`, deliberately. A backup that
+mirrors deletions will cheerfully erase the file you deleted by accident, which
+is the opposite of what the word means to the person running it. Old files
+accumulate instead. Disks are cheaper than regret.
+
+It is also interruptible: Ctrl-C is safe, and running it again resumes rather
+than starting over. Unreadable files are skipped and named in the log at
+`/var/log/macpro-backup/` rather than aborting the whole run — which matters on
+a disk with 2,839 recorded read failures.
+
+### Making it automatic
+
+A timer already runs daily. It does **nothing** unless it finds a USB drive
+whose label is exactly `MACPRO-BACKUP` — no drive, or an unlabelled one, and it
+exits silently. It will never nag, and it will never guess which USB stick you
+meant.
+
+To opt in, label the drive once:
+
+```bash
+lsblk -o NAME,SIZE,FSTYPE,LABEL          # find your drive, LOOK carefully
+sudo fatlabel /dev/sdX1 MACPRO-BACKUP    # for a FAT/exFAT drive
+sudo e2label  /dev/sdX1 MACPRO-BACKUP    # for an ext4 drive
+```
+
+Then leave it plugged in. Check on it with:
+
+```bash
+systemctl list-timers macpro-backup.timer
+backup-now --status
+```
+
+## You will be told when the disk gets worse
+
+`smartd` watches both disks. As shipped by Debian it emails `root` — and this
+machine has **no mail system installed**, so every warning went nowhere. That
+is fixed: a handler at `/etc/smartmontools/run.d/20desktop-alert` now
+
+- writes **`DISK-WARNING-READ-ME.txt` onto the desktop** of every user, in plain
+  language, saying what to do — this is the part that still works months later
+  when nobody remembers any of this
+- raises a pop-up if somebody is logged in at the time
+- logs to the journal under the tag `smart-alert`
+
+Read past alerts with:
+
+```bash
+journalctl -t smart-alert
+```
+
+The file is safe to delete once you have a backup. It comes back if the disk
+deteriorates again.
+
 ### Where to copy it to
 
-**An external USB drive is the best answer**, and the one to reach for first:
+**An external USB drive is the best answer**, and the one to reach for first.
+`backup-now` above automates all of this; the manual version is:
 
 ```bash
 lsblk                                    # find the drive you just plugged in

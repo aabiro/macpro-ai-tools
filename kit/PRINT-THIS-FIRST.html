@@ -122,7 +122,28 @@ extensions, and how to recover if a key leaks &mdash; is on this machine:</p>
 is attached to it.</strong> Until you add one, the AI tools start up and politely
 refuse to do anything. That is correct behaviour, not a fault.</p>
 
-<h2>5. The only commands worth remembering</h2>
+<h2>5. Backing up &mdash; do this before you trust the machine</h2>
+
+<p><strong>One of the two hard disks in this machine is wearing out.</strong>
+That was true at handover and it is documented. It does not stop you using the
+computer; it does mean anything you care about needs a second copy.</p>
+
+<p>Plug in a USB drive and type:</p>
+
+<pre>sudo backup-now</pre>
+
+<p>It asks which drive, then copies your files. It <strong>never deletes
+anything</strong>, and it <strong>cannot write to the machine's internal
+disks</strong> &mdash; it only ever writes to USB. Ctrl-C is safe; running it
+again carries on where it stopped.</p>
+
+<p>To check afterwards: <code>backup-now --status</code></p>
+
+<p><strong>If a file called <code>DISK-WARNING-READ-ME.txt</code> ever appears on
+the desktop</strong>, the computer is telling you the disk has got worse. Read
+it. Do a backup that day. Do not reinstall anything.</p>
+
+<h2>6. The only commands worth remembering</h2>
 
 <p>Type these in a Terminal:</p>
 
@@ -139,7 +160,7 @@ refuse to do anything. That is correct behaviour, not a fault.</p>
 
 <p><strong>None of these can break the machine.</strong> There is no delete in any of them.</p>
 
-<h2>6. In a web browser</h2>
+<h2>7. In a web browser</h2>
 
 <p>From this machine, or from a laptop on the same network:</p>
 

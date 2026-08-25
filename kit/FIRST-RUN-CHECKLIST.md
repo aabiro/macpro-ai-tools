@@ -216,6 +216,9 @@ what to do about it.
 | | |
 |---|---|
 | Everything installed, ports, MCP servers | [AI-STACK.md](AI-STACK.md) |
+| Accounts and API keys, step by step | [ACCOUNTS-AND-SIGN-IN.md](ACCOUNTS-AND-SIGN-IN.md) |
+| Using Linux and Lion together | [USING-BOTH-SYSTEMS.md](USING-BOTH-SYSTEMS.md) |
+| Backups, and the disk that is failing | [DISK-HEALTH-AND-BACKUP.md](DISK-HEALTH-AND-BACKUP.md) |
 | Black screen, boot problems, the radeon fault | [LINUX-BOOT-AND-DISPLAY.md](LINUX-BOOT-AND-DISPLAY.md) |
 | Newer macOS, CPU and GPU upgrades | [HARDWARE-UPGRADE-PATH.md](HARDWARE-UPGRADE-PATH.md) |
 
