@@ -66,6 +66,51 @@ curl -s localhost:8081/health
 `ai-gateway` and `cockpit-web` deliberately share that one file, so there is a
 single place to rotate credentials.
 
+### The gateway speaks OpenAI's dialect
+
+As well as its own simple API, `ai-gateway` now serves the two endpoints every
+chat front-end already knows:
+
+```
+GET  http://<this-machine>:8081/v1/models
+POST http://<this-machine>:8081/v1/chat/completions
+```
+
+So any OpenAI-compatible client — on this machine or any other on the network —
+can use it, and **the API keys stay in one file on this machine** instead of
+being copied into each app. Streaming (`"stream": true`) is supported.
+
+Models are advertised only when their provider has a key, so the list is empty
+until `/etc/ai-cockpit/env` is filled in. Exposed names:
+
+| Model | Provider | Notes |
+|---|---|---|
+| `gemini-pro-latest` | Gemini | strongest; alias, so it will not be retired out from under you |
+| `gemini-flash-latest` | Gemini | fast, cheap; the sensible default |
+| `gemini-3.1-pro` | Gemini | pinned version |
+| `gemini-3.7-flash` | Gemini | pinned version |
+| `claude-sonnet-5` | Anthropic | needs `ANTHROPIC_API_KEY` |
+| `gpt-4o` | OpenAI | needs `OPENAI_API_KEY` |
+
+> **The `-latest` aliases are the safe choice, and that is not theoretical.**
+> While setting this up, `gemini-2.5-pro` and `gemini-2.5-flash` were still
+> listed by the API but refused every request with *"no longer available to new
+> users"*. A pinned model ID silently becomes dead weight; an alias keeps
+> working.
+
+> **Pro models must think.** They reject `thinkingBudget: 0` outright with
+> *"This model only works in thinking mode"*, which is exactly what the gateway
+> sends by default to save tokens. The OpenAI endpoint therefore tracks a
+> per-model thinking flag: on for Pro, off for Flash.
+
+Test it without any client:
+
+```bash
+curl -s localhost:8081/v1/models
+curl -s localhost:8081/v1/chat/completions -H 'content-type: application/json' \
+  -d '{"model":"gemini-flash-latest","messages":[{"role":"user","content":"hello"}]}'
+```
+
 ## Command-line tools
 
 | Command | Version | Note |
@@ -449,7 +494,7 @@ whether a 2006 CPU can run them. It can:
 
 | Application | What it is | Result |
 |---|---|---|
-| **Open WebUI** | ChatGPT-style web interface | **runs** — container stays up |
+| **Open WebUI** | ChatGPT-style web interface | **does NOT run** — see below |
 | **Home Assistant** | home automation | **runs** — container stays up |
 | **Vaultwarden** | Bitwarden-compatible password manager | **runs** — exits only because it refuses to start without a persistent volume, which is a safety feature |
 | **Paperless-ngx** | document archive with OCR | **runs** — exits only because it wants Redis and Postgres alongside it |
@@ -466,10 +511,47 @@ That is the boundary, demonstrated rather than assumed. **Exit code 132 is
 128+4, meaning SIGILL** — worth memorising, because it is the signature of a
 too-new binary on this CPU and it looks like an ordinary crash otherwise.
 
-The first four images are already pulled, so they start without downloading
-again. None is configured or enabled: they are proof the machine can run them,
-not running services. Each needs its own volumes and, for Paperless, a
-`docker compose` stack with Redis and Postgres.
+> ### Open WebUI does not work here, and the reason is worth knowing
+>
+> An earlier version of this table said Open WebUI runs. That was wrong, and
+> the mistake is instructive: the container was still alive 45 seconds in, so a
+> short smoke test called it a pass. It crashes *later* in startup, after the
+> database migrations, with **exit 132 — SIGILL**.
+>
+> The cause is **NumPy**. Its x86-64 builds require SSE4.2, which this 2006
+> Xeon does not have, and `open_webui/config.py` imports `chromadb`
+> unconditionally, which imports NumPy. So it dies before serving anything.
+>
+> None of the obvious escapes work, all tried here:
+>
+> | Attempt | Result |
+> |---|---|
+> | `VECTOR_DB=qdrant`, `RAG_EMBEDDING_ENGINE=openai` | still 132 — the import is unconditional |
+> | NumPy 1.26 / 2.0 / 2.1 wheels | all 132 |
+> | NumPy built from source, `-Dcpu-baseline=min` | still 132 — "min" already means x86-64-v2 |
+> | NumPy from source, `sse2` baseline, `allow-noblas` | still 132 |
+>
+> NumPy 2.x treats SSE4.2 as a hard floor on x86-64, not a tunable default.
+> `torch`, `onnxruntime`, `sentence_transformers` and `faster_whisper` in that
+> image fail the same way.
+>
+> **The way to have this interface anyway:** run Open WebUI on a modern
+> computer and point it at *this machine's* gateway, which now speaks the
+> OpenAI dialect (below). The old machine keeps the keys and does the talking;
+> the modern one only draws the page.
+
+None of these images is retained on the machine — they were pulled, tested and
+removed again, so the results above are evidence rather than an installation.
+Pull whichever one you want:
+
+```bash
+docker pull vaultwarden/server                       # ~290 MB
+docker pull ghcr.io/paperless-ngx/paperless-ngx      # ~2.5 GB
+docker pull ghcr.io/home-assistant/home-assistant    # ~2.4 GB
+```
+
+Each needs its own volumes, and Paperless needs a `docker compose` stack with
+Redis and Postgres beside it.
 
 ### Cockpit — system administration in a browser
 
