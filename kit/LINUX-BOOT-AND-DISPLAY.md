@@ -224,25 +224,49 @@ two partitions,   vfat + hfsplus       -> Lion
 Earlier versions of this document hardcoded `/dev/sdb2` as Lion. After the
 letters swapped, that same command pointed at Debian's root. Use labels.
 
-## 8. Node.js — why the distro package matters
+## 8. Node.js — current upstream Node works; test before assuming
 
-The CPUs are **x86-64-v1**: no SSE4.1, SSE4.2 or POPCNT. Official Node.js
-binaries from nodejs.org are built for newer baselines and die with an illegal
-instruction here.
+The CPUs are **x86-64-v1**: no SSE4.1, SSE4.2 or POPCNT. The reasonable fear is
+that modern upstream builds assume a newer baseline and die instantly with an
+illegal instruction.
 
-**Debian's `nodejs` package works**, because Debian builds for the x86-64
-baseline:
+**For Node.js that fear turns out to be wrong.** Tested by downloading the
+official tarballs from nodejs.org and running them:
 
 ```
-$ node -e 'console.log(process.version)'
-v20.19.2
+v24.11.0: runs, reports v24.11.0
+v22.20.0: runs, reports v22.20.0
 ```
 
-So install Node from apt, never from nodejs.org or `nvm`. The npm-based AI CLIs
-(Claude Code, Gemini CLI) run fine on top of it.
+Node's own release builds still target the base x86-64 baseline. So the machine
+runs **Node 24 from NodeSource**, installed as the system Node:
 
-Same reasoning applies generally: prefer Debian packages over upstream binaries
-on this machine, and if something dies instantly with SIGILL, this is why.
+```
+$ node --version && npm --version
+v24.19.0
+11.17.0
+```
+
+Debian's `nodejs` (v20) also works and is a fine fallback, but there is no
+reason to stay on it.
+
+> **An earlier version of this section stated the opposite** — that nodejs.org
+> binaries "die with an illegal instruction here" — and instructed the reader to
+> install Node only from apt. That was never tested. It was generalised from
+> Claude Code 2.x crashing, which is a **Bun**-compiled binary, not Node, and
+> which fails for its own reasons (below). Two different runtimes, one wrong
+> conclusion.
+
+The lesson worth keeping is the method, not the verdict: on this CPU, **run the
+binary before believing anything about whether it works**. It costs a minute:
+
+```bash
+./the-thing --version || echo "SIGILL means the baseline is too new"
+```
+
+Things genuinely blocked by the v1 baseline, all confirmed by testing: Claude
+Code 2.x, and official Ollama builds (which need AVX). Things that turned out
+fine: Node 22/24, desktop Visual Studio Code, podman, Electron generally.
 
 ### Claude Code must stay on the 1.x line
 

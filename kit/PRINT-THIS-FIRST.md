@@ -197,10 +197,30 @@ Type `ai help` to see the exact addresses for this machine.
 | **Firewall** | Only your home network can reach this machine. Nothing is exposed to the internet. |
 | **A local AI model** | Works with no internet at all, but is very slow (about a word per second). For emergencies. |
 
-## Also installed
+## Also installed — the everyday applications
 
-A web browser (Firefox), a terminal, a file manager, and the usual desktop
-applications. Python and Node are installed for programming.
+All of these are in the **Applications** menu, top-left of the screen. You do
+not need the AI to use any of them.
+
+| | |
+|---|---|
+| **Firefox** | Web browser. Current version, not an old one. |
+| **LibreOffice** | Documents, spreadsheets and presentations. Opens and saves Word and Excel files. |
+| **VLC** | Plays video and music — essentially any file you give it. |
+| **GIMP** | Photo and image editing. |
+| **OpenShot** | Video editing on a timeline. |
+| **Thunar** | The file manager, for browsing your files. |
+| **Terminal** | Where you type the commands on this sheet. |
+
+For programming, **Python** and **Node.js** are installed and current, along
+with the tools to build software from source.
+
+**The look of the desktop** — dark theme, icons, fonts — is in **Settings →
+Appearance**. Change it freely; nothing depends on it.
+
+**If you prefer something lighter**, a second desktop called **LXDE** is
+installed. At the login screen, click the small icon near your name to pick it.
+Xfce is the default and there is no need to change.
 
 ---
 

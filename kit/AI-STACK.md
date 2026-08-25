@@ -76,6 +76,8 @@ single place to rotate credentials.
 | `gemini` | 0.55.1 | |
 | `codex` | 0.0.2505291658 | last **TypeScript** release; current ones are Rust binaries |
 | `gh` | 2.46.0 | GitHub CLI |
+| `node` / `npm` | 24.19.0 / 11.17.0 | NodeSource. Current Node **does** run on this CPU — tested, see LINUX-BOOT-AND-DISPLAY.md §8 |
+| `uv` / `uvx` | 0.12.5 | Python packaging: resolves and installs in seconds where `pip` takes minutes |
 | `aider` | 0.86.2 | needs Python <3.13, so it runs on a standalone 3.12 fetched by `uv` |
 | `g5-codex` | — | read files, propose a patch, show a diff |
 | `g5-copilot` | — | suggest/explain a shell command, never runs it |
@@ -434,20 +436,115 @@ sudo timeshift --restore                    # roll back
 against a bad configuration change, not against the disk dying. Backups still
 belong on external media — see [DISK-HEALTH-AND-BACKUP.md](DISK-HEALTH-AND-BACKUP.md).
 
+### Desktop applications — current versions, via Flatpak
+
+Debian's own packages are stable but old. Flatpak carries **current upstream
+releases** and keeps them isolated from the system, so a modern Firefox cannot
+drag in libraries that break everything else. All four were launched and
+confirmed to draw a real window on this CPU, not merely to install:
+
+| App | Version | Launch |
+|---|---|---|
+| Firefox | 154.0 | Applications menu, or `flatpak run org.mozilla.firefox` |
+| LibreOffice | 26.2.5.2 | documents, spreadsheets, presentations |
+| VLC | 3.0.23 | plays essentially any video or audio file |
+| GIMP | 3.2.4 | image editing |
+
+Debian's older Firefox ESR is still installed and still works; the Flatpak one
+is the current release. Either is fine.
+
+```bash
+flatpak list --app            # what is installed
+flatpak update                # update all of them
+```
+
+> **`dbus-x11` and `xdg-desktop-portal-gtk` are not optional here.** Without
+> them a Flatpak app cannot open the file-chooser dialog, so "Open…" in
+> LibreOffice silently does nothing, and **GIMP aborts on startup** while its
+> icon loader fails. Both packages are installed for exactly this reason. If
+> Flatpak apps ever start misbehaving after a reinstall, check these first.
+
+### Desktop look — Arc-Dark and Papirus
+
+| Setting | Value |
+|---|---|
+| Window and widget theme | Arc-Dark |
+| Icons | Papirus-Dark |
+| Interface font | Noto Sans 10 |
+| Monospace font | JetBrains Mono 10 |
+| Font rendering | antialiased, slight hinting, RGB subpixel order |
+
+Change any of it in **Settings → Appearance**, or from a terminal:
+
+```bash
+xfconf-query -c xsettings -p /Net/ThemeName -s Arc-Dark
+```
+
+> **If a setting appears to do nothing, restart the settings daemon**, not the
+> machine. GTK reads the theme from the XSETTINGS manager, and if `xfsettingsd`
+> is not publishing, every app silently falls back to the default Adwaita look
+> while `xfconf-query` cheerfully reports the theme you asked for. That
+> mismatch cost real time to diagnose here:
+>
+> ```bash
+> xfsettingsd --replace &
+> ```
+>
+> To see what applications *actually* resolved, rather than what was requested:
+>
+> ```bash
+> python3 -c "import gi; gi.require_version('Gtk','3.0'); from gi.repository import Gtk; \
+> Gtk.init([]); w=Gtk.Window(); w.realize(); \
+> print(w.get_style_context().lookup_color('theme_bg_color')[1].to_string())"
+> ```
+>
+> A dark colour means the dark theme really is loaded. Verified to survive a
+> full logout and login.
+
+### A second, lighter desktop: LXDE
+
+**LXDE** is installed alongside Xfce and offered at the login screen. On a
+machine drawing 2560×1440 with no working GPU acceleration, LXDE is noticeably
+lighter. Choose it from the session menu on the login screen — the small icon
+near the username — then log in as usual. Xfce remains the default.
+
+Openbox is also listed there; it is the bare window manager underneath LXDE,
+with no panel or desktop icons. Useful, but not somewhere to start.
+
+### Video editing
+
+`openshot-qt 3.1.1` — timeline video editor, from Debian. Paired with
+**`ffmpeg 7.1.5`** for anything scriptable:
+
+```bash
+ffmpeg -i input.mov -c:v libx264 -crf 20 output.mp4
+```
+
+### Newer packages when they are needed: backports
+
+`trixie-backports` is enabled but **nothing is installed from it**, which is the
+correct state: backports are for when you specifically need a newer version, not
+a source to upgrade everything from.
+
+```bash
+apt list -a <package>                                  # see if backports has it
+sudo apt install -t trixie-backports <package>         # take the newer one
+```
+
 ### Hardening and housekeeping
 
 | | |
 |---|---|
 | `fail2ban` | bans repeated failed SSH logins. SSH is open to the LAN, so this matters. |
 | `lynis` | security audit — run `sudo lynis audit system` for a report |
-| `needrestart` | tells you which services need restarting after an update |
+| `needrestart` | restarts services after an update. Desktop pop-ups are turned off in `/etc/needrestart/conf.d/90-no-desktop-nag.conf` — one per `apt` run buried the screen in red warnings. Run `needrestart` by hand to see what is pending. |
 | `fwupd` | firmware updates where a vendor provides them; it does enumerate this Mac's devices |
 | `unattended-upgrades` | security patches apply themselves |
 
 ### Also available
 
-`syncthing` (installed, not enabled — file sync between machines), `flatpak`
-(alternative app distribution), `zsh` + `zoxide`, `plocate`.
+`syncthing` (installed, not enabled — file sync between machines), `zsh` +
+`zoxide`, `plocate`, `wmctrl` and `xdotool` (script the desktop from a terminal).
 
 ## The firewall, corrected
 
