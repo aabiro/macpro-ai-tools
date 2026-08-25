@@ -162,13 +162,25 @@ def do_copy(dest_root, auto=False):
     dest = os.path.join(dest_root, "macpro-backup")
     os.makedirs(dest, exist_ok=True)
 
-    sources = ["/home/"]
-    # /etc is small and is what makes a rebuild possible rather than a guess.
+    # Per-source exclusions, because rsync anchors a leading "/" to the
+    # TRANSFER root, not the filesystem root. With /etc/ as the source,
+    # "--exclude=/etc/shadow" looks for /etc/etc/shadow and silently matches
+    # nothing -- which is how the password hashes ended up on the backup drive
+    # the first time this was tested. Anchor relative to the source instead.
+    sources = [("/home/", ["/*/.cache/", "/*/.local/share/Trash/",
+                           "/*/node_modules/", "/*/.npm/", "/*/.venv/",
+                           "**/node_modules/", "**/.cache/"])]
+    # /etc is small and is what makes a rebuild possible rather than a guess --
+    # minus the files that would put every account's password hash on a USB
+    # drive somebody could lose.
     if os.path.isdir("/etc"):
-        sources.append("/etc/")
+        sources.append(("/etc/", ["/shadow", "/shadow-", "/shadow.*",
+                                  "/gshadow", "/gshadow-", "/gshadow.*",
+                                  "/ssh/ssh_host_*_key", "/ai-cockpit/env",
+                                  "/sudoers.d/", "/credstore*/"]))
 
     total_failed = 0
-    for src in sources:
+    for src, excludes in sources:
         sub = os.path.join(dest, src.strip("/").replace("/", "_"))
         os.makedirs(sub, exist_ok=True)
         cmd = [
@@ -177,12 +189,7 @@ def do_copy(dest_root, auto=False):
             "--ignore-errors",                # a bad sector must not abort it
             "--human-readable",
             "--log-file=" + log,
-            # Caches and rebuildable junk. Excluding these is the difference
-            # between a 20-minute backup and an all-night one.
-            "--exclude=.cache/", "--exclude=.local/share/Trash/",
-            "--exclude=*/node_modules/", "--exclude=.npm/", "--exclude=.venv/",
-            "--exclude=/etc/shadow*", "--exclude=/etc/gshadow*",
-        ]
+        ] + ["--exclude=" + e for e in excludes]
         if not auto:
             cmd.append("--info=progress2")
         cmd += [src, sub + "/"]

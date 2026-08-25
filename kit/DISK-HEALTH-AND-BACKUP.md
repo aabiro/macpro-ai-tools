@@ -158,6 +158,19 @@ mirrors deletions will cheerfully erase the file you deleted by accident, which
 is the opposite of what the word means to the person running it. Old files
 accumulate instead. Disks are cheaper than regret.
 
+**What it deliberately does not copy.** Password hashes (`/etc/shadow`,
+`/etc/gshadow`), the SSH host private keys, the API-key file
+`/etc/ai-cockpit/env`, and `/etc/sudoers.d`. A backup drive is a thing that gets
+lost or lent; none of that should travel on one.
+
+> That exclusion was wrong the first time and only testing caught it. rsync
+> anchors a leading `/` in an exclude pattern to the **transfer root**, not the
+> filesystem root — so with `/etc/` as the source, `--exclude=/etc/shadow`
+> silently looks for `/etc/etc/shadow`, matches nothing, and copies the hashes
+> anyway. The patterns are now anchored per source and verified by asserting
+> each file's absence after a real run. Untested backup code is worse than
+> none, because it produces confidence instead of backups.
+
 It is also interruptible: Ctrl-C is safe, and running it again resumes rather
 than starting over. Unreadable files are skipped and named in the log at
 `/var/log/macpro-backup/` rather than aborting the whole run — which matters on
