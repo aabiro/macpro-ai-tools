@@ -464,6 +464,23 @@ flatpak update                # update all of them
 > icon loader fails. Both packages are installed for exactly this reason. If
 > Flatpak apps ever start misbehaving after a reinstall, check these first.
 
+### Sound
+
+Works, and was tested rather than assumed: the onboard **ALC889A** codec is
+driven by PulseAudio 17, Master unmuted, and a test tone played cleanly through
+both channels. Volume lives in the panel, or:
+
+```bash
+alsamixer                 # arrow keys; M mutes
+speaker-test -c 2 -t sine -f 440 -l 1
+```
+
+PipeWire is deliberately **not** installed. The log shows
+`xdg-desktop-portal: can't load config client.conf` because the portal looks for
+PipeWire and does not find it. That warning is harmless — it affects screen
+*sharing*, not audio — and replacing a working sound stack on a nineteen-year-old
+machine buys nothing.
+
 ### Desktop look — Arc-Dark and Papirus
 
 | Setting | Value |
