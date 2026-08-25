@@ -441,6 +441,36 @@ So:
 Worth knowing: Debian 13's glibc 2.41 is *newer* than Ubuntu 24.04's 2.39. The
 host is not the old part of this machine — the CPU is.
 
+#### Which container-only applications actually run here
+
+Tested on this machine, not inferred. Several popular applications ship as
+containers and are genuinely painful to install any other way; the question was
+whether a 2006 CPU can run them. It can:
+
+| Application | What it is | Result |
+|---|---|---|
+| **Open WebUI** | ChatGPT-style web interface | **runs** — container stays up |
+| **Home Assistant** | home automation | **runs** — container stays up |
+| **Vaultwarden** | Bitwarden-compatible password manager | **runs** — exits only because it refuses to start without a persistent volume, which is a safety feature |
+| **Paperless-ngx** | document archive with OCR | **runs** — exits only because it wants Redis and Postgres alongside it |
+| `mongo:7` | database — *deliberate negative control* | **fails: exit 132 (SIGILL)** |
+
+MongoDB prints the reason itself before dying:
+
+```
+WARNING: MongoDB 5.0+ requires a CPU with AVX support, and your current
+system does not appear to have that!
+```
+
+That is the boundary, demonstrated rather than assumed. **Exit code 132 is
+128+4, meaning SIGILL** — worth memorising, because it is the signature of a
+too-new binary on this CPU and it looks like an ordinary crash otherwise.
+
+The first four images are already pulled, so they start without downloading
+again. None is configured or enabled: they are proof the machine can run them,
+not running services. Each needs its own volumes and, for Paperless, a
+`docker compose` stack with Redis and Postgres.
+
 ### Cockpit — system administration in a browser
 
 ```
