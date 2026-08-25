@@ -43,9 +43,18 @@ code serve-web --host 0.0.0.0 --port 8443 --connection-token-file ...
 ```
 
 That runs as `vscode-web.service` on the same port, so the firewall rule and all
-documentation still apply. code-server is stopped, disabled and its unit removed;
-the binary is left in place only for rollback and can be deleted with
-`rm -rf /usr/local/lib/code-server /usr/local/bin/code-server`.
+documentation still apply.
+
+**code-server is now fully removed** — unit, binary, library directory and its
+config, freeing 740 MB. `vscode-web.service` mentions it only in comments and
+was unaffected; the desktop editor is `code 1.134.0` from Microsoft's own
+package.
+
+> An earlier version of this section said the binary was "left in place for
+> rollback" and gave `rm -rf /usr/local/lib/code-server` as the way to remove
+> it. That command would have removed nothing: the real directory was
+> `code-server-4.133.0`, version-suffixed. A removal instruction that silently
+> succeeds while removing nothing is worse than none.
 
 ### Credentials
 
@@ -806,6 +815,7 @@ sudo apt install -t trixie-backports <package>         # take the newer one
 |---|---|
 | `fail2ban` | bans repeated failed SSH logins. SSH is open to the LAN, so this matters. |
 | `lynis` | security audit — run `sudo lynis audit system` for a report |
+| `ras-mc-ctl` | ECC/memory error summary. Lives in `/usr/sbin`, which is **not** on a normal user's PATH — call it as `sudo ras-mc-ctl --summary` or by full path. `macpro-telemetry` and the health MCP were both reporting "rasdaemon not installed" because of exactly this, on a machine where it was installed and working. Fixed by searching sbin explicitly. |
 | `needrestart` | restarts services after an update. Desktop pop-ups are turned off in `/etc/needrestart/conf.d/90-no-desktop-nag.conf` — one per `apt` run buried the screen in red warnings. Run `needrestart` by hand to see what is pending. |
 | `fwupd` | firmware updates where a vendor provides them; it does enumerate this Mac's devices |
 | `unattended-upgrades` | security patches apply themselves |

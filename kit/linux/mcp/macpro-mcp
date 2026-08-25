@@ -37,6 +37,25 @@ import sys
 TELEMETRY = "/var/lib/macpro-telemetry/latest.json"
 
 
+def find_tool(name):
+    """Locate a binary that may live in a directory not on a user's PATH.
+
+    rasdaemon installs ras-mc-ctl into /usr/sbin, which is absent from a normal
+    user's PATH on Debian. shutil.which() therefore returns None, and this tool
+    used to report "rasdaemon not installed" on a machine where it was installed,
+    running, and perfectly readable -- the single most misleading answer it could
+    give about memory health. Check the usual sbin directories explicitly.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    for d in ("/usr/sbin", "/sbin", "/usr/local/sbin"):
+        p = os.path.join(d, name)
+        if os.path.exists(p) and os.access(p, os.X_OK):
+            return p
+    return None
+
+
 def run(argv, timeout=30):
     """Fixed-argv subprocess. Never uses a shell. Never raises."""
     try:
@@ -137,10 +156,11 @@ def h_get_disk_health(_):
 
 def h_get_memory_errors(_):
     """ECC errors via rasdaemon. EDAC cannot work on this chipset."""
-    if not shutil.which("ras-mc-ctl"):
+    tool = find_tool("ras-mc-ctl")
+    if not tool:
         return json.dumps({"error": "rasdaemon not installed"})
     return json.dumps({
-        "summary": run(["ras-mc-ctl", "--summary"], timeout=30).strip(),
+        "summary": run([tool, "--summary"], timeout=30).strip(),
         "note": ("EDAC is unavailable on this Intel 5000X chipset because the "
                  "kernel has no i5000_edac module, so rasdaemon reading the CPU "
                  "machine-check banks is the only ECC signal. 'No Memory errors' "

@@ -27,6 +27,25 @@ import time
 WRITE_PATH = "/var/lib/macpro-telemetry/latest.json"
 
 
+def find_tool(name):
+    """Locate a binary that may live in a directory not on a user's PATH.
+
+    rasdaemon installs ras-mc-ctl into /usr/sbin, which is absent from a normal
+    user's PATH on Debian. shutil.which() therefore returns None, and this tool
+    used to report "rasdaemon not installed" on a machine where it was installed,
+    running, and perfectly readable -- the single most misleading answer it could
+    give about memory health. Check the usual sbin directories explicitly.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    for d in ("/usr/sbin", "/sbin", "/usr/local/sbin"):
+        p = os.path.join(d, name)
+        if os.path.exists(p) and os.access(p, os.X_OK):
+            return p
+    return None
+
+
 def sh(cmd, timeout=15):
     """Run a command, returning stdout or None. Never raises."""
     try:
@@ -177,8 +196,9 @@ def collect_ecc():
     corrupts anything, and the absence of this signal is why a bad contact on
     DIMM A4 took a week of guesswork to find.
     """
-    if shutil.which("ras-mc-ctl"):
-        summ = sh(["ras-mc-ctl", "--summary"], timeout=20) or ""
+    ras = find_tool("ras-mc-ctl")
+    if ras:
+        summ = sh([ras, "--summary"], timeout=20) or ""
         out = {"source": "rasdaemon",
                "daemon": (sh(["systemctl", "is-active", "rasdaemon"])
                           or "unknown").strip()}
