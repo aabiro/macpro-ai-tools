@@ -696,6 +696,12 @@ have full read/write access — it is a sync, not a one-way copy.
 
 Ports 22000 (transfer) and 21027 (finding other devices) are open on the LAN.
 
+> **It ships paired with nothing.** Syncthing here knows only itself: no other
+> device is configured and no folder is shared with anyone. A device pairing was
+> briefly created during setup and then removed, because pairing this machine to
+> the previous owner's laptop would leave that laptop's device ID sitting in the
+> config for the next owner to find. Verified empty at handover.
+
 ### Printing and scanning
 
 CUPS is running, with drivers for the common families (Gutenprint covers most
