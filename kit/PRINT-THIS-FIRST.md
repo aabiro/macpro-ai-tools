@@ -267,6 +267,8 @@ not need the AI to use any of them.
 | **OpenShot** | Video editing on a timeline. |
 | **Thunar** | The file manager, for browsing your files. |
 | **Terminal** | Where you type the commands on this sheet. |
+| **Printers** | In Settings. A printer on your network is usually found automatically. |
+| **Document Scanner** | For a scanner or an all-in-one printer. |
 
 For programming, **Python** and **Node.js** are installed and current, along
 with the tools to build software from source.

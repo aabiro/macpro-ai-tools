@@ -630,6 +630,20 @@ when it exits**, so anything edited while it is running is discarded — stop it
 first, edit, then start it again. Dragging icons by hand works fine and is the
 normal way to change this.
 
+### Printing and scanning
+
+CUPS is running, with drivers for the common families (Gutenprint covers most
+Epson/Canon, `printer-driver-escpr` newer Epson, `hplip` HP) and **network
+printer discovery is live** via Avahi — so a printer on the same network is
+usually found without being told anything about it.
+
+Add a printer through **Settings → Printers** (`system-config-printer`), or in a
+browser at `http://localhost:631`. Scanning is **Document Scanner**
+(`simple-scan`).
+
+mDNS discovery already had its firewall hole (UDP 5353), so nothing needed
+opening. Printing is outbound, so it needs no inbound rule at all.
+
 ### Sound
 
 Works, and was tested rather than assumed: the onboard **ALC889A** codec is
