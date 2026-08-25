@@ -404,11 +404,75 @@ firmware problems. That is a mechanism worth adding to the list — not a
 diagnosis, and a weaker candidate than the graphics card, which has direct
 evidence behind it (§1, ROM reading `0xffff`).
 
-**How to separate them**, if someone wants to settle it: the next time the
-machine fails to boot, note whether the fans ramp to full and stay there. That
-ramp is the firmware failing at video POST, and points at the card. A drive that
-does not answer would leave the fans normal and the machine sitting quietly with
-no boot device.
+**This has now been observed, and it settles it.** On a failed boot the fans
+**do** ramp and stay strong. That rules the drive out and puts the graphics card
+back as the cause.
+
+### Why loud fans mean the graphics card, mechanically
+
+The fans on this machine are run by the **SMC**, not by the operating system. At
+power-on the SMC starts from a safe default, and the EFI firmware hands it a
+thermal profile part-way through POST. If POST never gets that far, the SMC never
+receives its targets and **falls back to maximum RPM as a thermal fail-safe** —
+it is being asked to cool a machine whose temperature it has no instructions
+about.
+
+So "fans at full, screen black, no boot" is not two faults. It is one:
+**POST stopped**, and the fan behaviour is the downstream consequence.
+
+That also excludes the disk cleanly. Drive enumeration happens *after* video
+initialisation, so a drive that failed to answer would leave POST complete, the
+fans at their normal idle, and the machine sitting quietly with either a
+question-mark folder or a "no boot device" message. Quiet fans would mean the
+disk. Loud fans mean it never got that far.
+
+### What the card looks like from a running system
+
+Measured while the machine is up, which is the frustrating part — none of it is
+wrong:
+
+| | |
+|---|---|
+| PCI status | clean: no `TAbort`, `MAbort`, `SERR` or `PERR` |
+| Link | x16 at 2.5GT/s, as expected |
+| Expansion ROM | `at 000c0000 [disabled]` — **cannot be read at all** |
+| PCIe AER errors | 0 |
+| Machine checks | 0 |
+| ECC errors | 0 |
+| Fans, running | 17–30% of maximum |
+
+The one anomaly is the one that matters: **the card's ROM does not read back.**
+That is the same finding as §1, and it is what POST depends on — the firmware
+must read the video ROM to bring up the display. A card whose ROM answers
+sometimes gives exactly this: a boot that works two times in three.
+
+> **A caution on the AER and machine-check figures.** A first pass at this
+> counted 19 "AER errors" and 4 "machine checks" from the journal. Both were
+> zero. The matches were **rasdaemon's own startup lines** announcing which
+> event types it had enabled. Grepping for `aer` and `mce:` finds the
+> instrument, not the events. The same mistake, in the same log, produced a
+> phantom ECC error earlier in this project. Count events, never words.
+
+### The conclusion, and what to do
+
+The evidence converges on a **19-year-old graphics card whose ROM is
+intermittently unreadable**, and the fault appeared after a mains power cut,
+which is consistent with a marginal contact or a degraded part.
+
+1. **Reseat the card** — free, and oxidised contacts after a power event are
+   common. Do this first.
+2. **Replace it** if that does not settle it. A Mac-flashed Radeon HD 5770 or
+   7950 also gets you boot screens, a working `radeon`/`amdgpu` driver, real
+   acceleration, and makes most of this document unnecessary. See
+   [HARDWARE-UPGRADE-PATH.md](HARDWARE-UPGRADE-PATH.md).
+
+Fan speeds are now recorded every five minutes by `macpro-telemetry`, with each
+fan's percentage of maximum, so a recurrence is visible in data rather than by
+ear:
+
+```bash
+macpro-telemetry | python3 -c 'import json,sys; print(json.load(sys.stdin)["fans"])'
+```
 
 Either way the practical consequence is the same and already handled: **keep
 backups off this machine.** If this drive does brick, Debian and everything

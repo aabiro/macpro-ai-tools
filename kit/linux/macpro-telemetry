@@ -224,6 +224,39 @@ def collect_ecc():
             "note": "i5000_edac is absent from this kernel; EDAC cannot work here"}
 
 
+def collect_fans():
+    """Fan speeds, which on this machine are a primary diagnostic signal.
+
+    Two of the faults in this machine's history announced themselves through the
+    fans and nothing else: a marginal FB-DIMM contact drove them to full and kept
+    them there, and a failed video POST does the same because the SMC never
+    receives its thermal targets and falls back to maximum. Recording the numbers
+    turns "the fans sound loud" into something comparable over time.
+
+    applesmc exposes them; the earlier version of this collector matched only
+    lines ending in degrees C and silently dropped every RPM reading.
+    """
+    fans = {}
+    if not shutil.which("sensors"):
+        return {"status": "lm-sensors not installed"}
+    raw = sh(["sensors", "-A"]) or ""
+    for line in raw.splitlines():
+        m = re.match(r"\s*([\w .+-]+?):\s*(\d+)\s*RPM", line)
+        if m:
+            name = m.group(1).strip()
+            entry = {"rpm": int(m.group(2))}
+            lim = re.search(r"min\s*=\s*(\d+)\s*RPM.*?max\s*=\s*(\d+)\s*RPM", line)
+            if lim:
+                entry["min"] = int(lim.group(1))
+                entry["max"] = int(lim.group(2))
+                # Near maximum on an idle machine is the interesting case: it is
+                # what both historical faults looked like.
+                entry["percent_of_max"] = round(
+                    100.0 * entry["rpm"] / entry["max"], 1) if entry["max"] else None
+            fans[name] = entry
+    return fans or {"status": "no fans reporting -- is applesmc loaded?"}
+
+
 def collect_thermal():
     temps = {}
     if shutil.which("sensors"):
@@ -290,6 +323,7 @@ def main():
         "smart": collect_smart(),
         "ecc": collect_ecc(),
         "thermal": collect_thermal(),
+        "fans": collect_fans(),
         "services": collect_services(),
         "display": collect_display(),
         "tailscale": collect_tailscale(),
