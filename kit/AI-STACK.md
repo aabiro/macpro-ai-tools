@@ -836,6 +836,51 @@ sudo apt install -t trixie-backports <package>         # take the newer one
 `syncthing` (installed, not enabled — file sync between machines), `zsh` +
 `zoxide`, `plocate`, `wmctrl` and `xdotool` (script the desktop from a terminal).
 
+## Verification sweep, 2026-08-26
+
+Run after the initramfs outage was repaired, to establish what is actually
+working rather than assumed. Every line below was checked, not inferred.
+
+**All eight desktop applications open a real window**: Firefox, LibreOffice,
+VLC, GIMP 3.2.4, OpenShot, Visual Studio Code, Thunar, Terminal. Zero crashes.
+
+**All twenty command-line tools** report a version: claude 1.0.128,
+gemini 0.55.1, codex, node 24.19.0, npm 11.17.0, uv 0.12.5, python 3.13.5,
+ffmpeg 7.1.5, git, docker 26.1.5, podman 5.4.2, rclone, glow, ripgrep, bat,
+mosh, ncdu, tealdeer, fastfetch, flatpak.
+
+**All three custom MCP servers respond** to a JSON-RPC `initialize` when run as
+the user, which is how `claude` starts them.
+
+**Services**: every expected unit active, **zero failed units**.
+
+**Gateway** v1.1.0 healthy, with `/v1/models` answering.
+
+**Audio** working (69% master), **printing** working (CUPS active, one printer
+configured), **ethernet** up, **Wi-Fi** present as `wls5`.
+
+### The number worth watching
+
+```
+/dev/sda  ST31000333AS     realloc=8    pending=0  uncorrectable=0
+/dev/sdb  SAMSUNG HD103SI  realloc=255  pending=4  uncorrectable=2839
+```
+
+**The failing Lion drive has not deteriorated.** Pending sectors are still 4 and
+uncorrectable reads still 2,839 — unchanged from the handover baseline, through
+an entire unbootable-machine incident and a 201 GB copy. Watch these two numbers;
+growth is the signal to stop using it.
+
+### Two mistakes to avoid repeating
+
+**`pkill -f` matches your own command.** Killing flatpak apps with
+`pkill -f org.mozilla.firefox` from a shell whose command line contains that
+string kills the shell. It happened twice in one session. Use `pgrep`, check the
+PIDs, then kill by PID.
+
+**Never blanket-close windows.** `wmctrl -c` over every window id raises the
+logout dialog. Close by name, or by id excluding the desktop and panels.
+
 ## Log noise that is not worth chasing
 
 A sweep of the journal turned these up. They are recorded so nobody spends an
