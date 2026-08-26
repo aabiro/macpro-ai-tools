@@ -484,6 +484,86 @@ similar also gets you boot screens, a working `radeon`/`amdgpu` driver, real
 acceleration, and makes this entire document obsolete. See
 [HARDWARE-UPGRADE-PATH.md](HARDWARE-UPGRADE-PATH.md).
 
+## 9b. An 85 MB initramfs will not boot this machine — the outage of 2026-08-26
+
+The machine became completely unbootable, and the cause is worth recording in
+detail because nothing about it announced itself.
+
+**What happened.** Installing `broadcom-sta-dkms` for Wi-Fi silently rebuilt the
+initramfs for *every* installed kernel. With Debian's default `MODULES=most` the
+image reached **85 MB**. The machine then would not boot at all — and printed
+**nothing**: no kernel messages, no panic, no output even with
+`earlyprintk=efi,keep initcall_debug ignore_loglevel`. Both kernels failed
+identically, because both images had been rebuilt.
+
+**Why silence.** This machine loads a 64-bit kernel through a **32-bit EFI
+loader**. That path is far more sensitive to image size than a normal one, and
+past a certain point the kernel never starts executing, so there is nothing to
+print. The previous working image was 70 MB; the broken one 85 MB.
+
+| | size | boots |
+|---|---|---|
+| before the driver | 70,633,132 | yes |
+| after the driver | 85,363,533 | **no** |
+| after the fix | 19,815,558 | yes |
+
+**Honest caveat: two things changed at once.** The fix removed the driver *and*
+switched to `MODULES=dep`. So it is not proven whether the failure was the size
+or the `wl` module being loaded from the initramfs. Both were addressed, and
+Wi-Fi was then restored *keeping* `MODULES=dep` — which works, because `dep`
+packs only what is needed to reach the root filesystem, and `wl` is not. It
+loads afterwards from the installed system.
+
+**The configuration now:**
+
+```
+MODULES=dep
+COMPRESS=zstd
+/etc/initramfs-tools/modules:  ahci ata_piix libata sd_mod ext4
+```
+
+Those forced modules matter. `dep` decides what to include by probing the
+**running** system, and a rebuild from a rescue chroot cannot see the real
+controller — producing a small image that still cannot find root. Naming them is
+the difference between a fix and a second outage.
+
+### The lessons, which cost a night
+
+1. **A DKMS install rebuilds your boot image.** On this machine that is a
+   boot-path change. Reboot and verify before walking away.
+2. **Read `/boot` first.** `ls -la /boot` shows sizes and dates and would have
+   identified this in one command. Three hypotheses were proposed and tested
+   before anyone looked.
+3. **Loud fans mean POST stopped; quiet fans mean it got further.** This
+   outage had quiet fans, which correctly ruled out the graphics card (§9) and
+   was noticed only after the third wrong guess.
+
+## 9c. Automating SSH into this machine: use IdentitiesOnly
+
+`fail2ban` runs here, and it will ban you.
+
+An automated repair session made dozens of `ssh -i keyfile` connections. Without
+`IdentitiesOnly=yes`, OpenSSH offers **every** key in `~/.ssh` before the one you
+named. Each rejected key logs `Failed publickey`, `fail2ban` counts those as an
+attack, and with `bantime.increment` enabled the bans escalate. Five bans were
+issued, twelve minutes apart, and the symptom — port 22 refusing while every
+other service answered — was misdiagnosed twice as sshd having failed. sshd was
+running the whole time.
+
+```bash
+ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 macpro@<host>
+```
+
+The LAN is now permanently whitelisted in
+`/etc/fail2ban/jail.d/lan-whitelist.conf`, because port 22 is already
+unreachable from the internet and locking the owner out of their own computer is
+the worse failure. See `kit/linux/fail2ban-lan-whitelist.conf`.
+
+**A refused connection is not a dead service.** Refused means something sent a
+reset — a listener that is absent, or a firewall *rejecting*. A dropped packet
+times out instead. When every other port answers, suspect the ban before the
+daemon.
+
 ## 10. Before handover — revoke automation access
 
 Remote administration was granted so this machine could be fixed over SSH. It

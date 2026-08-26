@@ -725,6 +725,17 @@ browser at `http://localhost:631`. Scanning is **Document Scanner**
 mDNS discovery already had its firewall hole (UDP 5353), so nothing needed
 opening. Printing is outbound, so it needs no inbound rule at all.
 
+### The ghost text on the desktop
+
+Console text sometimes remains visible on the desktop. It is not screen burn-in
+and nothing is damaged.
+
+With `nomodeset` there is no graphics driver: the boot console and Xorg both
+write into the **same EFI framebuffer**, and neither clears it on handover. Any
+pixel the desktop does not paint over still shows what the console last wrote
+there. `clear-framebuffer.service` now blanks the buffer once, just before the
+login screen, which removes it. Cosmetic only.
+
 ### Sound
 
 Works, and was tested rather than assumed: the onboard **ALC889A** codec is

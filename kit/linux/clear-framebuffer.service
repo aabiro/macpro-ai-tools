@@ -1,0 +1,23 @@
+[Unit]
+Description=Blank the EFI framebuffer before the login screen
+Documentation=file:///usr/local/share/doc/macpro/kit/LINUX-BOOT-AND-DISPLAY.md
+# This machine runs nomodeset, so there is no real graphics driver: the boot
+# console and Xorg both write into the same EFI framebuffer, and neither clears
+# it on handover. Console text therefore stays visible in video memory wherever
+# the desktop has not painted over it -- the "ghost text" on the desktop.
+# Writing zeros over the whole buffer once, just before the greeter starts,
+# removes it. Cosmetic only; nothing depends on it.
+Before=lightdm.service
+After=systemd-user-sessions.service
+DefaultDependencies=no
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+# dd stops with ENOSPC when it reaches the end of the framebuffer, which is
+# success here, so the failure is ignored deliberately.
+ExecStart=/bin/sh -c 'dd if=/dev/zero of=/dev/fb0 bs=1M 2>/dev/null; exit 0'
+
+[Install]
+WantedBy=graphical.target
