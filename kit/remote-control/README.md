@@ -17,6 +17,50 @@ the reason a week of work could happen without sitting in front of it.
 | `g5_patch_bootloader` | install a 32-bit `boot.efi` |
 | `g5_clone_volume` | clone a volume |
 
+### Debian-side tools
+
+The tools above drive Mac OS X. These three drive the Debian install on the
+other disk. Only one of the two runs at a time, so each says so plainly when the
+machine is booted into the other OS rather than returning an empty result that
+reads as "nothing wrong".
+
+| Tool | What it does |
+|---|---|
+| `g5_linux_boot_health` | kernel, command line, **initramfs sizes and dates**, recent boots, failed units |
+| `g5_linux_desktop_exec` | run a command *inside the logged-in desktop session* |
+| `g5_linux_screenshot` | capture the screen, copy it back, and check it is not blank |
+
+They exist because of three specific failures during the repair of 2026-08-26,
+and each encodes the lesson rather than describing it.
+
+**`g5_linux_boot_health` returns numbers, never a verdict.** A DKMS driver
+install silently rebuilt the initramfs to 85 MB, and this machine cannot boot an
+image that size through its 32-bit EFI loader — it printed nothing at all, not
+even with `earlyprintk` and `initcall_debug`. Three wrong causes were proposed
+before anyone ran `ls -la /boot`, which showed it instantly. Healthy is ~20 MB;
+anything near 70 MB is a boot failure waiting for the next restart.
+
+**`g5_linux_desktop_exec` refuses to run without a display.** Resolving the
+session by hand with `pgrep -f xfce4-session` matches the calling shell — whose
+own command line contains that string — returning your PID, an empty `DISPLAY`,
+and commands that silently do nothing while exiting 0. That produced three false
+"fixed it" conclusions in one evening. This uses `pgrep -x`, which matches the
+process name and cannot match the caller, and it aborts rather than run blind.
+
+**`g5_linux_screenshot` proves you looked.** Services were checked over SSH and
+reported as "everything is fine" while the display state was completely unknown.
+It returns the image and reports the mean brightness and variation, because a
+capture of a black screen and a failed capture are indistinguishable if you only
+check that a file appeared.
+
+> The connection uses `IdentitiesOnly=yes`, and that is not optional. Without
+> it ssh offers every key in `~/.ssh` before the one named; each rejection logs
+> `Failed publickey`, and `fail2ban` on this machine counts those as an attack.
+> Automated use banned the administrator five times in one evening, and the
+> symptom — port 22 refusing while every other service answered — was misread
+> twice as sshd having failed. A refused connection means something sent a
+> reset; suspect a ban before a dead daemon.
+
 ## Where it runs
 
 **On your own computer, not on the Mac Pro.** It reaches the Mac over SSH:
