@@ -429,6 +429,38 @@ parts, and `g5-doctor --raw` produces a diagnostic dump you can paste into the
 cockpit's Custodian tab from any browser. So Lion is not useless without it —
 just not self-sufficient.
 
+### The VM route closes this gap — on one machine, tested
+
+There is now a third option that needs no second machine: **run Lion as a
+virtual machine while Debian is up.** Then both are running at once, so the
+gateway is live and Lion can reach it.
+
+Verified, not assumed. From inside the Lion guest, using Lion's *own* Python
+2.7 — the interpreter whose OpenSSL 0.9.8 cannot do TLS 1.2:
+
+```
+$ lion 'python -c "import urllib2; print urllib2.urlopen(
+      \"http://10.0.2.2:8081/health\", timeout=10).read()"'
+{"status": "ok", "version": "1.1.0", "providers_configured": [],
+ "providers_supported": ["anthropic", "gemini", "openai"]}
+```
+
+`10.0.2.2` is the host as seen from QEMU's user network; the gateway listens on
+`0.0.0.0:8081`. Plain HTTP over that hop, so Lion's ancient TLS never comes
+into it — which is the entire point of the gateway.
+
+Two honest caveats:
+
+- **This applies to Lion-in-a-VM, not Lion-on-the-metal.** Boot Lion natively
+  and Debian is off again, gateway with it. The constraint above still stands
+  for that case.
+- **The `g5-*` tools are staged in `/Users/Shared/g5-tools` but not installed**
+  in `/usr/local/bin` on the Lion side, so they are not yet pointed at
+  `10.0.2.2`. Installing them inside the VM would change only the VM's overlay,
+  not the real Lion install, so it has deliberately been left alone.
+
+See [LION-VM.md](LION-VM.md) for how to run it.
+
 ### Why not run the gateway on Lion itself?
 
 Because the gateway is the thing that needs TLS 1.2, and Lion is the machine

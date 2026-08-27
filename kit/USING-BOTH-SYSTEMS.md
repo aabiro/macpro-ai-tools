@@ -4,15 +4,23 @@ Two operating systems are installed on two separate hard disks. This explains
 what you can and cannot do across them, because the answer is not symmetrical
 and the asymmetry surprises people.
 
-## The basic rule: one at a time
+## The basic rule: one at a time on the metal
 
-**Only one of them runs at any moment.** You choose at power-on, from the boot
-menu. There is no way to switch without restarting, and while Linux is running,
-Lion is not running — its programs are not available, its services are not
-answering, nothing on that side is executing.
+**Only one of them owns the hardware at any moment.** You choose at power-on,
+from the boot menu. There is no way to switch without restarting, and while
+Linux is running, Lion is not running *on the hardware* — its programs are not
+available, its services are not answering.
 
-That is what "Lion is unreachable while Linux runs" means: unreachable as a
-*running system*. Its **files** are a different matter.
+Two things get around that, and both are covered below:
+
+- Lion's **files** can be read from Linux at any time. See the next section.
+- Lion itself can be **run as a virtual machine** while Linux is running, which
+  gives you a root shell in Lion from a Linux terminal. See
+  [Lion runs inside Linux](#lion-runs-inside-linux-in-a-virtual-machine).
+  It does not touch the real Lion disk at all.
+
+So "Lion is unreachable while Linux runs" is no longer quite true. What remains
+true is that only one of them can *own the machine* at a time.
 
 ## What works: Linux can read Lion's files
 
@@ -111,36 +119,78 @@ keys for, which turns "it doesn't work" into a specific fault.
 
 Full detail in [AI-STACK.md](AI-STACK.md).
 
-## Could Lion run inside Linux, in a virtual machine?
+## Lion runs inside Linux, in a virtual machine
 
-Asked often enough to answer properly. The honest answer is *possible in
-principle, poor value in practice.*
+This used to say "don't bother." It now works, so here is how to use it.
 
-**The hardware allows it.** These Xeons have Intel VT-x, and `/dev/kvm` is
-present and working on this machine — checked, not assumed.
+Lion boots as a guest while Linux keeps running. You get a root shell in Mac OS
+X 10.7.5 from a Linux terminal, without restarting anything:
 
-**But they lack EPT.** Nested paging arrived with the Nehalem generation, a
-couple of years after this machine. Without it, KVM has to emulate memory
-management in software, and everything inside the virtual machine runs
-substantially slower.
+```
+lion-vm start          # about 60 seconds to ready
+lion-vm wait           # blocks until it answers
+lion sw_vers           # run anything, as root, inside Lion
+lion-vm stop           # clean shutdown, about 12 seconds
+```
 
-Add the rest of it:
+`lion` on its own gives an interactive shell. `lion-vm` on its own lists
+everything it can do.
+
+### The part that matters most: the real disk is never written
+
+Lion's disk is the one that is failing — 255 reallocated sectors and 4 pending.
+So the VM does not use it directly. The physical disk is the *backing file* of
+a copy-on-write overlay and QEMU opens it **read-only**. Every write the guest
+makes — including its own `fsck` repairs and journal replay — lands in
+`/var/lib/lion-vm/lion-overlay.qcow2` instead.
+
+This is not a claim, it is checkable. After every boot, the disk's HFS+ volume
+header still reads `0x80002000` and its SMART counters have not moved, while
+the overlay has grown to around 900 MB. `lion-vm status` shows you the same
+thing.
+
+The practical consequence: **experiments in the VM cannot damage Lion.** Break
+it however badly you like, then `lion-vm restore`.
+
+### What it is good for, and what it is not
+
+Good for: running commands in Lion, reading and changing its files, testing a
+fix before doing it for real, and letting an AI assistant work on Lion — which
+was the whole point, because Lion itself is too old to run modern AI tooling.
+
+Not good for: using Lion as a desktop. Two honest limits —
 
 | | |
 |---|---|
-| Licence | Apple permits virtualising 10.7 **on Apple hardware**, which this is. So this part is fine. |
-| Graphics | 10.7 has no driver for the virtual display QEMU offers. Expect a working desktop to be real work, if at all. |
-| Memory | 7 GB total. Giving a guest a usable share leaves little for the host. |
-| Speed | No EPT, and a 2006 CPU underneath. Slower than the bare-metal Lion you already have. |
+| No visible desktop in a normal boot | 10.7 has no driver for the virtual display, so the screen stays black even though the OS is running fine underneath. Harmless if you are working over `lion`. |
+| A desktop only in safe mode | `lion-vm start --safe` does draw the login window; connect a VNC viewer to `127.0.0.1:5901`. Safe mode disables plenty, so treat it as a look-around, not a working environment. |
+| Slower than bare metal | These Xeons predate EPT, so KVM emulates memory management in software. Fine for shell work; not for anything heavy. |
+| Licensing is fine | Apple permits virtualising 10.7 on Apple hardware, which this is. |
 
-**The recommendation:** do not. You already have Lion, running properly on real
-hardware, one restart away. A virtual machine would be slower and more fragile
-than the thing it replaces. If the goal is reaching *files*, mount the disk
-read-only as above — that gets you what you actually wanted, instantly.
+For a *fast desktop* Lion, restart into it on real hardware — that is still the
+better tool for that job, and it is one restart away.
 
-The reverse — Linux as a guest inside Lion — is worse still: Lion's era of
-VirtualBox and VMware are long unsupported, and the Linux install here is on
-bare metal rather than in a disk image.
+### The SSH access lives in the overlay, not on the disk
+
+Remote Login was switched on, and the access key installed, **inside the
+overlay**. The real Lion install on the disk is untouched and still has Remote
+Login off. So:
+
+- `lion-vm snapshot` keeps a copy of the working overlay. One exists already.
+- `lion-vm restore` puts it back — use this to undo VM damage.
+- `lion-vm reset` goes all the way back to the bare disk, which also removes
+  the SSH access. You would then have to set it up again; the procedure is in
+  [LION-VM.md](LION-VM.md).
+
+The key is an RSA key generated on this machine, and it stays on this machine.
+Password logins are refused outright on that path (`PasswordAuthentication no`).
+
+The reverse — Linux as a guest inside Lion — is still not worth attempting:
+Lion's era of VirtualBox and VMware are long unsupported, and the Linux install
+here is on bare metal rather than in a disk image.
+
+Full technical record, including the five separate problems that had to be
+solved to make it boot at all: [LION-VM.md](LION-VM.md).
 
 ## Which side to use for what
 

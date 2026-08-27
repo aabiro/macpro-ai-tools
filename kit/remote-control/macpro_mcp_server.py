@@ -764,3 +764,85 @@ def g5_linux_screenshot(save_dir: str = "/tmp") -> str:
     except Exception as exc:  # noqa: BLE001
         facts.append(f"could not analyse the image: {exc}")
     return "\n".join(facts)
+
+
+# --- Lion as a VM guest -------------------------------------------------------
+#
+# Lion normally cannot be reached while Debian is running: one OS owns the
+# hardware at a time. Running Lion as a QEMU guest removes that limit, and
+# these two tools are the whole point of having done it -- an assistant can
+# read, change and EXECUTE inside Mac OS X 10.7 without rebooting anything.
+#
+# Safety property worth stating plainly: the guest cannot write Lion's physical
+# disk. /dev/sdb is the qcow2 backing file and QEMU opens it read-only, so all
+# guest writes land in an overlay. Nothing done through these tools can damage
+# the real Lion install. See kit/LION-VM.md.
+
+
+@mcp.tool()
+def g5_lion_vm_control(action: str = "status") -> str:
+    """
+    Start, stop or inspect the Lion virtual machine on the Debian side.
+
+    action: "status" | "start" | "stop" | "screenshot"
+      status      running? overlay size? last lines the firmware printed?
+      start       boot it headless and wait until its sshd answers (~60-90s)
+      stop        clean shutdown from inside the guest, then stop QEMU
+      screenshot  capture the guest screen and report whether it is lit
+
+    A black screen is NORMAL in the default boot: Mac OS X 10.7 has no driver
+    for the virtual display, so nothing is drawn even though the OS is running
+    perfectly underneath. Judge liveness with g5_lion_exec, never by the screen.
+
+    Requires Debian to be the booted OS -- the VM runs on that side.
+    """
+    action = (action or "status").strip().lower()
+    if action == "status":
+        return run_linux_command("lion-vm status", timeout=60)
+    if action == "start":
+        # start returns immediately, so wait for sshd or the caller cannot tell
+        # a slow boot from a failed one.
+        return run_linux_command("lion-vm start && lion-vm wait", timeout=420)
+    if action == "stop":
+        return run_linux_command("lion-vm stop", timeout=240)
+    if action == "screenshot":
+        return run_linux_command("lion-vm screenshot /tmp/lion-shot.png", timeout=120)
+    return ("Unknown action %r. Use one of: status, start, stop, screenshot."
+            % action)
+
+
+@mcp.tool()
+def g5_lion_exec(command: str, timeout: int = 120) -> str:
+    """
+    Run a shell command as root INSIDE the Lion virtual machine.
+
+    This is Mac OS X 10.7.5, so it is BSD userland: no GNU long options, no
+    `sed -i` without an argument, `defaults` instead of a registry, and
+    /usr/bin/python is Python 2.7.
+
+    Examples:
+        g5_lion_exec("sw_vers")
+        g5_lion_exec("ls -la /Users/administrator")
+        g5_lion_exec("defaults read /Library/Preferences/com.apple.loginwindow")
+
+    If this reports that the VM is not answering, start it with
+    g5_lion_vm_control("start") -- it is not running by default, because it
+    costs 3 GB of RAM on a machine that has under 8.
+
+    Changes made here land in the VM's overlay, NOT on Lion's real disk. That
+    makes it safe for experiments, and also means changes do not persist into
+    the Lion you get by rebooting the machine.
+    """
+    if not command or not command.strip():
+        return "No command given."
+    # Single-quote for the outer shell; the wrapper on the far side re-quotes.
+    quoted = "'" + command.replace("'", "'\\''") + "'"
+    out = run_linux_command("lion " + quoted, timeout=timeout)
+    if "no matching host key type" in out:
+        return ("The guest's sshd answered but the algorithms were rejected. That "
+                "means /usr/local/bin/lion was bypassed -- it exists precisely to "
+                "pass HostKeyAlgorithms=+ssh-rsa for Lion's OpenSSH 5.x.")
+    if "Connection refused" in out or "Connection closed" in out:
+        return ("The Lion VM is not answering. It is not running by default; "
+                "start it with g5_lion_vm_control(\"start\").\n\nRaw: " + out)
+    return out

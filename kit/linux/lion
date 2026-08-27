@@ -1,0 +1,26 @@
+#!/bin/bash
+# lion -- run a command inside the Lion VM as root, from Linux.
+#
+#   lion sw_vers
+#   lion 'defaults read /Library/Preferences/com.apple.loginwindow'
+#   lion                      # interactive shell
+#
+# The key was generated on this machine and stays on it. No password exists on
+# this path: sshd here is key-only (PasswordAuthentication no).
+#
+# The legacy algorithm flags are required, not optional -- Lion ships OpenSSH
+# 5.x, whose RSA-SHA1 host keys a modern client rejects by default. Without
+# them the failure reads "no matching host key type found", which looks like a
+# dead sshd rather than a negotiation mismatch.
+set -u
+KEY="$HOME/.ssh/lion_vm_key"
+[ -f "$KEY" ] || { echo "no VM key at $KEY" >&2; exit 1; }
+exec ssh -i "$KEY" -p 2222 \
+  -o HostKeyAlgorithms=+ssh-rsa \
+  -o PubkeyAcceptedAlgorithms=+ssh-rsa \
+  -o PubkeyAcceptedKeyTypes=+ssh-rsa \
+  -o StrictHostKeyChecking=no \
+  -o UserKnownHostsFile=/dev/null \
+  -o LogLevel=ERROR \
+  -o ConnectTimeout=15 \
+  root@127.0.0.1 "$@"
