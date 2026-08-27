@@ -61,7 +61,7 @@ package.
 | What | Where |
 |---|---|
 | Model API keys | `/etc/ai-cockpit/env` — `root:aigw`, mode 0640 |
-| code-server password | `/home/macpro/.config/code-server/config.yaml`, mode 0600 |
+| Browser-editor connection token | `/home/macpro/.vscode-web/connection-token` — this is what `vscode-web.service` passes to `code serve-web`. The old code-server config this row used to name was removed with code-server itself. |
 
 **Nothing works until the keys are filled in.** Both consoles report
 `providers_configured: []` and refuse requests until then:

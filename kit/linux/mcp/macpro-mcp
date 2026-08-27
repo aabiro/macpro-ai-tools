@@ -6,6 +6,7 @@ Three servers in one file, selected by argv[1]:
     macpro-mcp health     hardware health: telemetry, SMART, ECC
     macpro-mcp journal    read boot logs and service logs
     macpro-mcp apt        query installed and available packages
+    macpro-mcp lion       run and control Mac OS X Lion in the VM
 
 WHY THESE EXIST
 ---------------
@@ -18,10 +19,22 @@ undetected for a week: the data was there, nothing could read it.
 
 SAFETY
 ------
-Every tool is READ-ONLY. There is no write, delete, install or restart anywhere
-in this file, deliberately -- an agent with a bad idea cannot damage the machine
-through it. Commands are invoked as fixed argv lists, never through a shell, so
-nothing here can be turned into command injection by a crafted argument.
+The health, journal and apt servers are READ-ONLY: no write, delete, install or
+restart anywhere in them, deliberately.
+
+The lion server is NOT read-only -- it exists to run commands and change state
+inside Mac OS X. Two properties bound what it can reach:
+
+  * It acts inside the VM. The guest's disk is a copy-on-write overlay whose
+    backing file, the physical Lion disk, QEMU opens READ-ONLY. Nothing done
+    through these tools can touch the real Lion install.
+  * It cannot execute anything on the Linux host. Every tool invokes a fixed
+    argv list with no shell, so caller-supplied text is passed as a single
+    argument to `lion` and is only ever parsed by the shell INSIDE the guest.
+    A crafted argument cannot become a host command.
+
+Across all servers, commands are invoked as fixed argv lists, never through a
+shell, so nothing here can be turned into host command injection.
 
 Speaks MCP over stdio with no dependencies beyond the standard library, because
 this machine's CPU cannot run much else reliably.
@@ -215,6 +228,208 @@ def a_upgradable(_):
     return run(["apt", "list", "--upgradable"], timeout=90)[:20000] or "(up to date)"
 
 
+
+# --------------------------------------------------------------------------
+# lion -- Mac OS X 10.7.5 running as a VM guest
+#
+# Every function here shells out to /usr/local/bin/lion or lion-vm as a FIXED
+# argv list. The caller's command text becomes a single argument, so the Linux
+# shell never sees it; only the guest's shell does. See SAFETY above.
+# --------------------------------------------------------------------------
+LION = "/usr/local/bin/lion"
+LION_VM = "/usr/local/bin/lion-vm"
+
+
+def _lion_missing():
+    """Distinguish 'not installed' from 'not running' from 'broken'."""
+    if not os.path.exists(LION):
+        return ("The Lion VM tooling is not installed on this machine: %s is "
+                "absent. Nothing else in this server can work until it is." % LION)
+    return None
+
+
+def _lion_up():
+    """True only if the guest's sshd actually answered."""
+    try:
+        p = subprocess.run([LION, "true"], capture_output=True, timeout=25)
+        return p.returncode == 0
+    except Exception:
+        return False
+
+
+def lion_run(command, timeout=120):
+    """Run one command inside Lion. Returns output, or an explained failure."""
+    miss = _lion_missing()
+    if miss:
+        return miss
+    if not command or not str(command).strip():
+        return "No command given."
+    try:
+        p = subprocess.run([LION, str(command)], capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return ("TIMEOUT after %ss inside Lion. The guest may be booting, or the "
+                "command is waiting for input it will never get." % timeout)
+    out = ((p.stdout or b"") + (p.stderr or b"")).decode("utf-8", "replace")
+    if p.returncode != 0:
+        # Name the cause rather than returning a bare error.
+        if "no matching host key type" in out:
+            return ("The guest answered but rejected the algorithms. That means "
+                    "%s was bypassed -- it passes HostKeyAlgorithms=+ssh-rsa for "
+                    "Lion's OpenSSH 5.x." % LION)
+        if "Connection refused" in out or "Connection closed" in out or not out.strip():
+            if not _lion_up():
+                return ("The Lion VM is not answering. It is not started "
+                        "automatically in every situation; start it with the "
+                        "lion_vm_start tool.\n\nRaw: " + out.strip()[:300])
+        return "command exited %d:\n%s" % (p.returncode, out.strip()[:20000])
+    return out.strip()[:20000] or "(no output)"
+
+
+def l_exec(args):
+    return lion_run(args.get("command", ""), _int(args.get("timeout"), 120, 5, 600))
+
+
+def l_read_file(args):
+    path = str(args.get("path", "")).strip()
+    if not path.startswith("/"):
+        return "path must be absolute, e.g. /etc/hostconfig"
+    lines = _int(args.get("max_lines"), 400, 1, 5000)
+    # sed is present on Lion and avoids dragging a huge file across.
+    return lion_run("sed -n '1,%dp' %s" % (lines, _sh_quote(path)))
+
+
+def l_write_file(args):
+    """Write a file inside Lion. Content goes via base64 so nothing is mangled."""
+    import base64
+    path = str(args.get("path", "")).strip()
+    content = args.get("content")
+    if not path.startswith("/"):
+        return "path must be absolute"
+    if content is None:
+        return "no content given"
+    b64 = base64.b64encode(str(content).encode("utf-8")).decode("ascii")
+    # base64 is [A-Za-z0-9+/=] only, so it survives both shells untouched.
+    cmd = ("/bin/mkdir -p $(/usr/bin/dirname %s) && "
+           "/bin/echo %s | /usr/bin/openssl base64 -d -A > %s && "
+           "/usr/bin/stat -f%%z %s" % (_sh_quote(path), b64,
+                                       _sh_quote(path), _sh_quote(path)))
+    out = lion_run(cmd)
+    if out.strip().isdigit():
+        return "wrote %s bytes to %s" % (out.strip(), path)
+    return "write did not confirm a size. Output was:\n" + out
+
+
+def l_list_dir(args):
+    path = str(args.get("path", "/")).strip()
+    if not path.startswith("/"):
+        return "path must be absolute"
+    return lion_run("ls -la %s" % _sh_quote(path))
+
+
+def l_system_report(_):
+    """One call that answers 'what is the state of Lion right now'."""
+    parts = [
+        ("version",   "sw_vers"),
+        ("uptime",    "uptime"),
+        ("disk",      "df -h /"),
+        ("memory",    "vm_stat | head -6"),
+        ("users",     "ls /Users"),
+        ("network",   "ifconfig en0 2>/dev/null | head -4; route -n get default 2>/dev/null | head -4"),
+        ("remote login", "systemsetup -getremotelogin 2>/dev/null"),
+        ("cockpit",   "g5-config show 2>&1 | head -8"),
+    ]
+    out = []
+    for label, cmd in parts:
+        out.append("--- %s" % label)
+        out.append(lion_run(cmd, 60))
+    return "\n".join(out)
+
+
+def l_logs(args):
+    lines = _int(args.get("lines"), 80, 1, 1000)
+    grep = str(args.get("grep", "")).strip()
+    cmd = "tail -%d /var/log/system.log" % lines
+    if grep:
+        cmd += " | grep -i %s" % _sh_quote(grep)
+    return lion_run(cmd, 90)
+
+
+def l_apps(_):
+    return lion_run("ls /Applications", 60)
+
+
+def l_services(args):
+    name = str(args.get("filter", "")).strip()
+    cmd = "launchctl list"
+    if name:
+        cmd += " | grep -i %s" % _sh_quote(name)
+    return lion_run(cmd, 60)
+
+
+def l_gateway_check(_):
+    """Prove Lion itself can reach the AI gateway, using Lion's own Python."""
+    cfg = lion_run("g5-config show 2>&1 | head -8", 60)
+    url = ""
+    m = re.search(r"gateway\s+(\S+)", cfg)
+    if m:
+        url = m.group(1)
+    if not url.startswith("http"):
+        return ("No gateway is configured inside Lion. g5-config said:\n" + cfg)
+    probe = lion_run(
+        "/usr/bin/python -c \"import urllib2; "
+        "print(urllib2.urlopen('%s/health', timeout=10).read())\"" % url, 60)
+    return ("configured gateway: %s\n\nreached with Lion's own Python 2.7:\n%s"
+            % (url, probe))
+
+
+def l_vm_status(_):
+    miss = _lion_missing()
+    if miss:
+        return miss
+    facts = [run([LION_VM, "status"], timeout=60)]
+    facts.append("guest sshd answering: %s" % ("yes" if _lion_up() else "no"))
+    snap = "/var/lib/lion-vm/lion-overlay.qcow2.provisioned"
+    facts.append("snapshot present: %s" % ("yes" if os.path.exists(snap) else "no"))
+    facts.append("mounted at /mnt/lion-live: %s"
+                 % ("yes" if os.path.ismount("/mnt/lion-live") else "no"))
+    return "\n".join(facts)
+
+
+def l_vm_start(_):
+    miss = _lion_missing()
+    if miss:
+        return miss
+    if _lion_up():
+        return "already running and answering."
+    run([LION_VM, "start"], timeout=120)
+    out = run([LION_VM, "wait"], timeout=420)
+    return out.strip() + ("\nguest sshd answering: %s"
+                          % ("yes" if _lion_up() else "no -- see lion_vm_screenshot"))
+
+
+def l_vm_stop(_):
+    miss = _lion_missing()
+    if miss:
+        return miss
+    return run([LION_VM, "stop"], timeout=300).strip() or "(no output)"
+
+
+def l_vm_screenshot(_):
+    """Capture the guest screen. A black screen is normal in a headless boot."""
+    miss = _lion_missing()
+    if miss:
+        return miss
+    out = run([LION_VM, "screenshot", "/tmp/lion-mcp-shot.png"], timeout=120)
+    return (out.strip() + "\n\nNote: 'lit=0.00%' is EXPECTED in the default boot "
+            "-- Mac OS X 10.7 has no driver for the virtual display. Judge whether "
+            "Lion is alive with lion_exec, never from the screen.")
+
+
+def _sh_quote(text):
+    """Quote for the shell INSIDE the guest (POSIX single-quote form)."""
+    return "'" + str(text).replace("'", "'\\''") + "'"
+
+
 # --------------------------------------------------------------------------
 SERVERS = {
     "health": [
@@ -235,6 +450,49 @@ SERVERS = {
             "lines": {"type": "integer", "description": "max lines (default 100)"},
         }, j_query),
     ],
+    "lion": [
+        ("lion_exec", "Run a shell command as root INSIDE Mac OS X Lion (the VM) "
+                      "and return its output. BSD userland: no GNU long options, "
+                      "/usr/bin/python is 2.7. Changes land in the VM overlay, "
+                      "never on Lion's physical disk.", {
+            "command": {"type": "string", "description": "shell command to run in Lion"},
+            "timeout": {"type": "integer", "description": "seconds, 5-600 (default 120)"},
+        }, l_exec),
+        ("lion_read_file", "Read a file from inside Lion.", {
+            "path": {"type": "string", "description": "absolute path in Lion"},
+            "max_lines": {"type": "integer", "description": "default 400"},
+        }, l_read_file),
+        ("lion_write_file", "Create or overwrite a file inside Lion. Content is "
+                            "transferred base64-encoded, so any bytes survive.", {
+            "path": {"type": "string", "description": "absolute path in Lion"},
+            "content": {"type": "string", "description": "the file's full new content"},
+        }, l_write_file),
+        ("lion_list_dir", "List a directory inside Lion.", {
+            "path": {"type": "string", "description": "absolute path (default /)"},
+        }, l_list_dir),
+        ("lion_system_report", "One-shot state of Lion: version, uptime, disk, "
+                               "memory, users, network, Remote Login, cockpit config.",
+         {}, l_system_report),
+        ("lion_logs", "Read Lion's /var/log/system.log.", {
+            "lines": {"type": "integer", "description": "default 80"},
+            "grep": {"type": "string", "description": "case-insensitive filter"},
+        }, l_logs),
+        ("lion_list_apps", "List the applications installed in Lion.", {}, l_apps),
+        ("lion_services", "List launchd jobs running in Lion.", {
+            "filter": {"type": "string", "description": "case-insensitive name filter"},
+        }, l_services),
+        ("lion_gateway_check", "Prove Lion can reach the AI gateway, using Lion's "
+                               "own Python 2.7 -- the interpreter whose OpenSSL "
+                               "cannot do TLS 1.2.", {}, l_gateway_check),
+        ("lion_vm_status", "Is the VM running, does its sshd answer, is a snapshot "
+                           "present, is it mounted at /mnt/lion-live.", {}, l_vm_status),
+        ("lion_vm_start", "Start the Lion VM and wait until its sshd answers.",
+         {}, l_vm_start),
+        ("lion_vm_stop", "Shut Lion down cleanly from inside, then stop QEMU.",
+         {}, l_vm_stop),
+        ("lion_vm_screenshot", "Capture the guest's screen to a PNG.",
+         {}, l_vm_screenshot),
+    ],
     "apt": [
         ("search_packages", "Search available Debian packages.",
          {"query": {"type": "string", "description": "search term"}}, a_search),
@@ -248,7 +506,7 @@ SERVERS = {
 def main():
     which = sys.argv[1] if len(sys.argv) > 1 else ""
     if which not in SERVERS:
-        sys.stderr.write("usage: macpro-mcp {health|journal|apt}\n")
+        sys.stderr.write("usage: macpro-mcp {health|journal|apt|lion}\n")
         return 2
     tools = SERVERS[which]
     by_name = {t[0]: t for t in tools}

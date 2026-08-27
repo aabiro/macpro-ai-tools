@@ -1,0 +1,64 @@
+#!/bin/bash
+# lion-run FILE [args...] -- run a file that lives in Lion, inside Lion.
+#
+# Translates the Linux view of the path to Lion's own view and picks an
+# interpreter from the extension:
+#
+#   lion-run /mnt/lion-live/Users/Shared/lion-demo/report.py
+#       -> lion 'cd /Users/Shared/lion-demo && /usr/bin/python report.py'
+#
+# WHY: the same file has two names. /mnt/lion-live/Users/Shared/x from Linux is
+# /Users/Shared/x from inside Lion. Getting that wrong is the single most common
+# mistake when driving Lion from a Linux editor, so do the mapping in one place.
+#
+# Output is also written to .vscode/last-run.log beside the file when that
+# directory exists, so an editor task's result can be read back afterwards.
+set -u
+MOUNT="${LION_MOUNT:-/mnt/lion-live}"
+
+[ "$#" -ge 1 ] || { echo "usage: lion-run [--in-lion] FILE [args...]" >&2; exit 2; }
+F="$1"; shift
+
+# Only paths under the mount are accepted. An absolute path like /etc/hosts is
+# ambiguous -- it names a real file on BOTH systems -- and guessing wrong would
+# silently run the wrong machine's file. Use --in-lion to be explicit.
+if [ "$F" = "--in-lion" ]; then
+    [ "$#" -ge 1 ] || { echo "usage: lion-run --in-lion /Users/... " >&2; exit 2; }
+    F="$1"; shift
+    MOUNT=""
+    case "$F" in
+      /*) ;;
+      *)  echo "lion-run: --in-lion needs an absolute path inside Lion." >&2; exit 2 ;;
+    esac
+else
+    case "$F" in
+      "$MOUNT"/*) ;;
+      *)  echo "lion-run: $F is not under $MOUNT, so it is not a file Lion can see." >&2
+          echo "          Open the project through $MOUNT (or ~/Lion), or say" >&2
+          echo "          lion-run --in-lion /Users/... to name a guest path directly." >&2
+          exit 2 ;;
+    esac
+fi
+
+LION_PATH="${F#$MOUNT}"
+DIR=$(dirname "$LION_PATH")
+BASE=$(basename "$LION_PATH")
+
+case "$BASE" in
+  *.py)  RUN="/usr/bin/python \"$BASE\"" ;;
+  *.sh)  RUN="/bin/bash \"$BASE\"" ;;
+  *.rb)  RUN="/usr/bin/ruby \"$BASE\"" ;;
+  *.pl)  RUN="/usr/bin/perl \"$BASE\"" ;;
+  *)     RUN="\"./$BASE\"" ;;          # rely on its own shebang
+esac
+
+CMD="cd \"$DIR\" && $RUN"
+[ "$#" -gt 0 ] && CMD="$CMD $*"
+
+echo "--- running in Mac OS X Lion: $LION_PATH"
+LOGDIR="$(dirname "$F")/.vscode"
+if [ -d "$LOGDIR" ]; then
+    lion "$CMD" 2>&1 | tee "$LOGDIR/last-run.log"
+    exit "${PIPESTATUS[0]}"
+fi
+lion "$CMD"

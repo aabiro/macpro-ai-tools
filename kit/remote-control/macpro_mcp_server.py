@@ -585,10 +585,6 @@ echo "dest used after: $(df -m "$DST" | tail -1 | awk '{{print $3}}') MB"
     return g5_run_detached(script, job_name)
 
 
-if __name__ == "__main__":
-    mcp.run(transport="stdio")
-
-
 # ==========================================================================
 # Debian side
 # ==========================================================================
@@ -603,20 +599,34 @@ if __name__ == "__main__":
 # administrator five times in one evening, and the symptom -- port 22 refusing
 # while every other service answered -- was misread twice as sshd having failed.
 
-LINUX_USER = "macpro"
+LINUX_USER = os.environ.get("MACPRO_LINUX_USER", "macpro")
+# Do NOT reach the Debian side through the "macpro" ssh_config alias. That alias
+# was written when this machine ran Mac OS X natively: it says
+# User administrator, IdentityFile ~/.ssh/id_rsa and forces ssh-rsa/ssh-dss
+# algorithms, and it pins an old host key. Debian needs a different user, a
+# different key, and has a new host key -- so the alias produces
+# "Permission denied (publickey)" and, after a few tries, a fail2ban ban.
+# Name the host, the user and the key explicitly here.
+LINUX_HOST = os.environ.get("MACPRO_LINUX_HOST", "192.168.1.124")
+LINUX_KEY = os.environ.get(
+    "MACPRO_LINUX_KEY", os.path.expanduser("~/.ssh/id_ed25519"))
+LINUX_TARGET = f"{LINUX_USER}@{LINUX_HOST}"
 LINUX_SSH_OPTS = [
-    "-o", f"User={LINUX_USER}",
+    "-i", LINUX_KEY,
     "-o", "BatchMode=yes",
     "-o", "ConnectTimeout=15",
+    # IdentitiesOnly without an IdentityFile offers NO key at all, which is how
+    # this broke: the -i above is what makes it meaningful.
     "-o", "IdentitiesOnly=yes",
     "-o", "StrictHostKeyChecking=no",
     "-o", "UserKnownHostsFile=/dev/null",
+    "-o", "LogLevel=ERROR",
 ]
 
 
 def run_linux_command(cmd: str, timeout: int = DEFAULT_TIMEOUT) -> str:
     """Run a command on the Debian side, distinguishing 'off' from 'broken'."""
-    argv = ["ssh"] + LINUX_SSH_OPTS + [SSH_TARGET, cmd]
+    argv = ["ssh"] + LINUX_SSH_OPTS + [LINUX_TARGET, cmd]
     try:
         p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -736,7 +746,7 @@ def g5_linux_screenshot(save_dir: str = "/tmp") -> str:
         return "Capture failed on the machine:\n" + grab
 
     local = os.path.join(save_dir, "g5-shot.png")
-    argv = ["scp"] + LINUX_SSH_OPTS + [f"{SSH_TARGET}:{remote}", local]
+    argv = ["scp"] + LINUX_SSH_OPTS + [f"{LINUX_TARGET}:{remote}", local]
     try:
         p = subprocess.run(argv, capture_output=True, text=True, timeout=120)
     except subprocess.TimeoutExpired:
@@ -846,3 +856,16 @@ def g5_lion_exec(command: str, timeout: int = 120) -> str:
         return ("The Lion VM is not answering. It is not running by default; "
                 "start it with g5_lion_vm_control(\"start\").\n\nRaw: " + out)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Entry point. It MUST stay last.
+#
+# @mcp.tool() registers a function when the decorator RUNS, so anything
+# defined below mcp.run() is never registered -- the server exits first.
+# Five tools sat below this block and were invisible to every client while
+# looking perfectly correct in the source. test-mcp-remote.py exists to catch
+# exactly that: it asserts on the advertised tool list, not on the file.
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    mcp.run(transport="stdio")

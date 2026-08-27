@@ -83,7 +83,8 @@ sudo mount /dev/disk/by-label/SHARED /mnt/shared
 > there, and one of the two disks holds the only copy of the previous owner's
 > files.
 
-Both systems can then read and write `/mnt/shared` (Linux) and the `SHARED`
+Once you have done that — it does not exist until you do — both systems can
+read and write `/mnt/shared` (Linux) and the `SHARED`
 volume (Lion).
 
 ## The AI tools: why Lion needs help from elsewhere

@@ -1,0 +1,90 @@
+#!/bin/bash
+# lion-mount -- make the Lion VM's filesystem appear as a folder in Linux.
+#
+#   lion-mount              mount it at /mnt/lion-live
+#   lion-mount umount
+#   lion-mount status
+#
+# WHY: so you can open a project that lives in Lion using a Linux editor. Files
+# edited under /mnt/lion-live are edited IN Lion, immediately -- there is no
+# copy step and nothing to sync. Pair it with `lion` to run things there:
+#
+#   code /mnt/lion-live/Users/Shared/myproject
+#   lion 'cd /Users/Shared/myproject && python setup.py'
+#
+# NOT TO BE CONFUSED WITH /mnt/lion, which is the *physical* Lion disk mounted
+# read-only. This one is the running VM, and it is read-write. Writes here land
+# in the VM's overlay, never on the failing disk.
+set -u
+MP="${LION_MOUNT:-/mnt/lion-live}"
+KEY="$HOME/.ssh/lion_vm_key"
+
+SSH_CMD="ssh -p 2222 -i $KEY \
+-o HostKeyAlgorithms=+ssh-rsa \
+-o PubkeyAcceptedAlgorithms=+ssh-rsa \
+-o PubkeyAcceptedKeyTypes=+ssh-rsa \
+-o StrictHostKeyChecking=no \
+-o UserKnownHostsFile=/dev/null \
+-o LogLevel=ERROR"
+
+mounted () { mountpoint -q "$MP"; }
+
+# Cache coherence. With sshfs's defaults, a file changed INSIDE Lion can read
+# stale from Linux for a second or two -- measured, not theoretical. That is
+# exactly the case that bites when something runs in Lion and produces output
+# an editor then reads. Turning the caches off makes both sides agree
+# immediately, at the cost of slower listings on large trees.
+# Set LION_MOUNT_CACHE=yes if you would rather have the speed.
+if [ "${LION_MOUNT_CACHE:-no}" = "yes" ]; then
+    CACHE_OPTS=""
+else
+    CACHE_OPTS="-o cache=no,attr_timeout=0,entry_timeout=0,dcache_timeout=0"
+fi
+
+case "${1:-mount}" in
+  mount)
+    if mounted; then echo "already mounted at $MP"; exit 0; fi
+    [ -d "$MP" ] || sudo mkdir -p "$MP"
+    sudo chown "$(id -u):$(id -g)" "$MP" 2>/dev/null || true
+    # Mounting before the guest's sshd answers produces a mount that looks fine
+    # and then fails on every read, so require a live connection first.
+    if ! lion true >/dev/null 2>&1; then
+      echo "the Lion VM is not answering -- start it with 'lion-vm start' first" >&2
+      exit 1
+    fi
+    # No default_permissions, and idmap=user on purpose. With
+    # default_permissions the kernel compares the LOCAL uid (1000) against the
+    # guest's owners (root, 501, ...) and denies every write, even though this
+    # connection is root inside the guest and may write anywhere. Letting the
+    # server decide is both correct and what makes editing usable.
+    sshfs root@127.0.0.1:/ "$MP" \
+      -o ssh_command="$SSH_CMD" \
+      -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3 \
+      -o noatime \
+      -o idmap=user \
+      $CACHE_OPTS \
+      || { echo "sshfs failed" >&2; exit 1; }
+    # Prove it: a mount that cannot be read is not a mount worth reporting.
+    if ls "$MP/System/Library/CoreServices" >/dev/null 2>&1; then
+      echo "mounted: $MP  (this is the running VM, read-write)"
+    else
+      echo "mounted but unreadable -- unmounting again" >&2
+      fusermount -u "$MP" 2>/dev/null
+      exit 1
+    fi
+    ;;
+  umount|unmount)
+    mounted || { echo "not mounted"; exit 0; }
+    fusermount -u "$MP" && echo "unmounted $MP"
+    ;;
+  status)
+    if mounted; then
+      echo "mounted at $MP"
+      ls "$MP" 2>/dev/null | head -6 | sed 's/^/  /'
+    else
+      echo "not mounted"
+    fi
+    ;;
+  *)
+    echo "usage: lion-mount [mount|umount|status]" >&2; exit 1 ;;
+esac
