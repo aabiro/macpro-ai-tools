@@ -208,6 +208,24 @@ async function shot(win, name) {
   check('project is mounted and readable',
     fs.existsSync(path.join(PROJ_LINUX, FILE)));
   check('workspace file exists', fs.existsSync(WORKSPACE));
+
+  // This machine has NO GPU: the desktop composites in software with xfwm4
+  // compositing off. Launching our VS Code while the operator's own VS Code (or
+  // a browser) is open has bled windows into each other, ghosted the cursor and
+  // crashed the session. Refuse rather than fight for the display. Override with
+  // LION_E2E_ALLOW_BUSY=1 only when you know the desktop is yours alone.
+  if (!process.env.LION_E2E_ALLOW_BUSY) {
+    let others = 0;
+    try {
+      others = parseInt(execFileSync('bash', ['-lc',
+        'pgrep -af "/usr/share/code/code" | grep -v "lion-e2e/[u]data" | grep -c . || true'],
+        { encoding: 'utf8' }).trim(), 10) || 0;
+    } catch (e) { /* pgrep absent: skip the guard rather than block */ }
+    check('the desktop is free (no other VS Code open on this GPU-less display)',
+      others === 0,
+      'another VS Code is running; close it and re-run (or set LION_E2E_ALLOW_BUSY=1). '
+      + 'Two editors at once on this framebuffer crash the session.');
+  }
   check('VS Code binary present', fs.existsSync(VSCODE));
   if (fails.length) {
     console.log('\npreconditions failed; not launching the editor.');
