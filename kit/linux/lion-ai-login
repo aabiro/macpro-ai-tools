@@ -1,0 +1,133 @@
+#!/bin/bash
+# lion-ai-login -- one-time sign-in for the AI assistants used in the Lion loop.
+#
+# The seamless loop edits Lion code with a REAL assistant: Claude Code is the
+# primary and the one the E2E drives headlessly; ChatGPT (the openai.chatgpt VS
+# Code extension) is the interactive alternate. Nothing ships signed in -- no
+# keys travel with this machine -- so you sign in ONCE here and it persists.
+#
+# There is deliberately NO fallback: an unsigned assistant is a failure, not a
+# thing to route around. We do not quietly hand the edit to Gemini and we do not
+# "skip" it, because a loop that only pretends to use AI is not the loop that was
+# asked for. This script only ever REPORTS status and tells you how to sign in;
+# it never types a credential for you.
+#
+#   lion-ai-login             # show status + the exact sign-in steps
+#   lion-ai-login --check-both# exit non-zero unless BOTH Claude and Codex are signed in
+#   lion-ai-login --check     # exit non-zero unless Claude is signed in
+#   lion-ai-login --check-any # exit non-zero unless Claude OR Codex is signed in
+#
+set -u
+
+MODE="${1:-report}"
+HOME_DIR="${HOME:-/home/macpro}"
+
+green() { printf '\033[32m%s\033[0m' "$1"; }
+red()   { printf '\033[31m%s\033[0m' "$1"; }
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# --- signed-in tests: fast, offline, and conservative -----------------------
+# A false "signed in" is worse than a false "signed out": it makes the E2E fail
+# deep instead of at the gate. So each test looks for a concrete credential.
+claude_signed_in() {
+  [ -n "${ANTHROPIC_API_KEY:-}" ] && return 0
+  [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && return 0
+  [ -f "$HOME_DIR/.claude/.credentials.json" ] && return 0
+  python3 - "$HOME_DIR/.claude.json" <<'PY' 2>/dev/null && return 0
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+sys.exit(0 if (d.get("oauthAccount") or d.get("primaryApiKey")) else 1)
+PY
+  return 1
+}
+
+codex_signed_in() {
+  [ -n "${OPENAI_API_KEY:-}" ] && return 0
+  [ -f "$HOME_DIR/.codex/auth.json" ] && return 0
+  return 1
+}
+
+ext_present() {  # $1 = extension id
+  code --list-extensions 2>/dev/null | grep -qix "$1"
+}
+
+# --- checks (for scripts / the E2E preflight) -------------------------------
+case "$MODE" in
+  --check-both)
+    if claude_signed_in && codex_signed_in; then exit 0; fi
+    claude_signed_in || echo "Claude Code is not signed in.  ->  claude   then  /login" >&2
+    codex_signed_in  || echo "Codex is not signed in.        ->  set OPENAI_API_KEY (or ~/.codex/auth.json)" >&2
+    exit 1
+    ;;
+  --check)
+    claude_signed_in && exit 0
+    echo "Claude Code is not signed in. Run: lion-ai-login   (then: claude  ->  /login)" >&2
+    exit 1
+    ;;
+  --check-any)
+    { claude_signed_in || codex_signed_in; } && exit 0
+    echo "No assistant is signed in. Run: lion-ai-login" >&2
+    exit 1
+    ;;
+esac
+
+# --- human-readable report --------------------------------------------------
+echo "AI assistants for the Lion dev loop"
+echo "==================================="
+echo
+
+# Claude Code CLI (primary)
+printf 'Claude Code CLI    '
+if ! have claude; then
+  red "not installed"; echo
+  echo "   install:  curl -fsSL https://claude.ai/install.sh | bash"
+elif claude_signed_in; then
+  green "signed in"; echo
+else
+  red "installed, NOT signed in"; echo
+  echo "   sign in once (persists in ~/.claude/.credentials.json):"
+  echo "       claude              # opens the TUI, then type:  /login"
+  echo "     or, for a headless/long-lived token on a Claude subscription:"
+  echo "       claude setup-token"
+fi
+echo
+
+# Codex / ChatGPT CLI (alternate)
+printf 'Codex CLI          '
+if ! have codex; then
+  red "not installed"; echo
+else
+  if codex_signed_in; then green "signed in"; echo; else
+    red "installed, NOT signed in"; echo
+    echo "   this codex build has no 'login' subcommand; give it a key:"
+    echo "       echo 'export OPENAI_API_KEY=sk-...' >> ~/.profile && . ~/.profile"
+    echo "     (or place the token at ~/.codex/auth.json)"
+  fi
+fi
+echo
+
+# VS Code extensions (interactive sign-in happens inside the editor)
+echo "VS Code extensions (sign in from the editor UI, once):"
+for pair in "anthropic.claude-code:Claude Code" "openai.chatgpt:ChatGPT"; do
+  id="${pair%%:*}"; name="${pair##*:}"
+  printf '   %-16s ' "$name"
+  if ext_present "$id"; then green "installed"; echo "  ($id)"; else
+    red "missing"; echo "     install:  code --install-extension $id"
+  fi
+done
+# Gemini is present but is NOT part of this loop and must not be relied on.
+if ext_present "google.geminicodeassist"; then
+  echo "   Gemini           present but intentionally UNUSED here (no fallback)"
+fi
+echo
+echo "The seamless loop and its E2E REQUIRE both Claude Code and Codex signed in."
+echo "There is no fallback: whichever is not signed in fails at the AI stage on"
+echo "purpose, and Gemini is never used to cover for it."
+
+# Exit status is success only when BOTH are signed in, so 'lion-ai-login && ...'
+# gates the whole loop.
+claude_signed_in && codex_signed_in

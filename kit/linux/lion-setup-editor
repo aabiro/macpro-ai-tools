@@ -219,6 +219,20 @@ else
     bad "report.py not readable from Linux"
 fi
 
+step "AI assistants (Claude Code + Codex)"
+# The editor loop is wired; the assistants still need a one-time sign-in. This
+# is the user's to do -- we never type a credential -- so this is a reminder,
+# not a gate. There is no fallback: unsigned assistants fail the E2E on purpose.
+if command -v lion-ai-login >/dev/null; then
+    if lion-ai-login --check-both >/dev/null 2>&1; then
+        ok "Claude Code and Codex are signed in"
+    else
+        printf '   note   sign in once (no fallback): run  lion-ai-login\n'
+    fi
+else
+    printf '   note   install lion-ai-login to manage assistant sign-in\n'
+fi
+
 printf '\n'
 if [ "$fail" -eq 0 ]; then
     echo "Ready. Open it with:"
@@ -226,6 +240,8 @@ if [ "$fail" -eq 0 ]; then
     echo
     echo "Then: Terminal -> new terminal -> 'Lion (root)' to be inside Mac OS X,"
     echo "or press the build key to run the open file there."
+    echo
+    echo "Sign the assistants in once (required, no fallback):  lion-ai-login"
     exit 0
 fi
 echo "$fail check(s) FAILED -- see above."

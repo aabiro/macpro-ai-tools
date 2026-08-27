@@ -95,64 +95,98 @@ async function focusTheFile(win) {
     .innerText().catch(() => '(none)');
 }
 
+// The one edit every assistant is asked to make. Kept BSD/Python-2.7 safe so
+// the only variable under test is "did this assistant edit Lion code that runs".
+const AI_PROMPT =
+  'In report.py, add a function disk_free() that returns the output of ' +
+  '`df -h /` filtered to the Avail column, and print it from main() as ' +
+  'disk_free=<value>. This code runs on Mac OS X 10.7 with Python 2.7 and ' +
+  'BSD userland, so use print as a statement and no f-strings. Edit the file.';
+
 /**
- * Have a real assistant add a function to the Lion project, then run it in Lion.
- *
- * Tries Claude Code first, then Codex. Neither is authenticated on this machine
- * by design -- no API keys ship with it -- so an unauthenticated tool is
- * reported as SKIPPED, never as a pass.
+ * Is Claude Code signed in? Fast, offline, and conservative -- a false "yes"
+ * would make this test fail deep instead of at the gate. Mirrors `lion-ai-login`.
  */
-function runAiEdit() {
-  const PROMPT =
-    'In report.py, add a function disk_free() that returns the output of ' +
-    '`df -h /` filtered to the Avail column, and print it from main() as ' +
-    'disk_free=<value>. This code runs on Mac OS X 10.7 with Python 2.7 and ' +
-    'BSD userland, so use print as a statement and no f-strings. Edit the file.';
+function claudeSignedIn() {
+  if (process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_CODE_OAUTH_TOKEN) return true;
+  const home = process.env.HOME || '/home/macpro';
+  try { if (fs.existsSync(path.join(home, '.claude', '.credentials.json'))) return true; } catch (e) { /* fall through */ }
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+    if (j.oauthAccount || j.primaryApiKey) return true;
+  } catch (e) { /* no config, treat as not signed in */ }
+  return false;
+}
+
+/** Is Codex signed in? Key in the environment, or a token file it wrote. */
+function codexSignedIn() {
+  if (process.env.OPENAI_API_KEY) return true;
+  const home = process.env.HOME || '/home/macpro';
+  try { if (fs.existsSync(path.join(home, '.codex', 'auth.json'))) return true; } catch (e) { /* fall through */ }
+  return false;
+}
+
+// Claude Code and Codex are BOTH required and BOTH exercised -- neither is a
+// fallback for the other, and Gemini is never used. Each has its own headless
+// invocation, its own sign-in test, and its own "unauthenticated" signature.
+const AI_ASSISTANTS = [
+  { name: 'Claude Code', bin: '/usr/local/bin/claude',
+    argv: ['-p', AI_PROMPT, '--permission-mode', 'acceptEdits'],
+    signedIn: claudeSignedIn,
+    unauth: /invalid api key|please run \/login|not authenticated|credit balance|unauthorized/i,
+    how: 'lion-ai-login          # then:  claude   ->  /login' },
+  { name: 'Codex', bin: '/usr/local/bin/codex',
+    // The Lion project is a plain folder, not a git repo, so codex refuses with
+    // "--skip-git-repo-check was not specified" unless we pass it. --full-auto
+    // sandboxes the run; the edit itself is a local file write.
+    argv: ['exec', '--full-auto', '--skip-git-repo-check', AI_PROMPT],
+    signedIn: codexSignedIn,
+    unauth: /not (logged in|authenticated)|missing api key|unauthorized|401|sign in|OPENAI_API_KEY/i,
+    how: 'lion-ai-login          # then set OPENAI_API_KEY (or ~/.codex/auth.json)' },
+];
+
+/**
+ * Have ONE assistant add a function to the Lion project, then run it in Lion.
+ * There is no fallback: if it is not signed in we return {ok:false} with the
+ * one-time sign-in command, and the caller records a FAILURE. We never hand the
+ * edit to another tool to manufacture a pass -- a loop that only pretends to use
+ * AI is not the loop that was asked for. Sign in once with `lion-ai-login`.
+ */
+function runAiEdit(spec) {
+  if (!spec.signedIn()) {
+    return { ok: false, why: spec.name + ' is not signed in on this machine', how: spec.how };
+  }
 
   const before = fs.readFileSync(path.join(PROJ_LINUX, FILE), 'utf8');
 
-  const candidates = [
-    { tool: 'claude',
-      argv: ['-p', PROMPT, '--permission-mode', 'acceptEdits'],
-      how: 'claude   (then /login)',
-      unauth: /invalid api key|please run \/login|not authenticated|credit balance/i },
-    { tool: 'codex',
-      argv: ['exec', '--full-auto', PROMPT],
-      how: 'codex login',
-      unauth: /not (logged in|authenticated)|missing api key|unauthorized|401|sign in/i },
-  ];
-
-  let lastWhy = '';
-  for (const c of candidates) {
-    let out = '';
-    try {
-      out = execFileSync('/usr/local/bin/' + c.tool, c.argv, {
-        cwd: PROJ_LINUX, encoding: 'utf8', timeout: 300000,
-        env: Object.assign({}, process.env, { CI: '1' }),
-      });
-    } catch (e) {
-      out = ((e.stdout || '') + (e.stderr || '')).toString();
-    }
-    if (c.unauth.test(out)) {
-      lastWhy = c.tool + ' is not signed in';
-      continue;
-    }
-    const after = fs.readFileSync(path.join(PROJ_LINUX, FILE), 'utf8');
-    if (after === before) {
-      lastWhy = c.tool + ' ran but changed nothing';
-      continue;
-    }
-    const output = execFileSync('/usr/local/bin/lion',
-      ['cd ' + PROJ_LION + ' && /usr/bin/python ' + FILE],
-      { encoding: 'utf8', timeout: 120000 }).toString();
-    return { tool: c.tool, fileChanged: true, output: output,
-             detail: 'the file grew by ' + (after.length - before.length) + ' bytes' };
+  let out = '';
+  try {
+    out = execFileSync(spec.bin, spec.argv, {
+      cwd: PROJ_LINUX, encoding: 'utf8', timeout: 300000,
+      env: Object.assign({}, process.env, { CI: '1' }),
+    });
+  } catch (e) {
+    out = ((e.stdout || '') + (e.stderr || '')).toString();
   }
-  return {
-    skipped: true,
-    why: 'no AI assistant is signed in on this machine (' + lastWhy + ')',
-    how: 'claude   # then type /login      -- or --      codex login',
-  };
+
+  // Signed-in state can still be rejected (expired token, no credit). Surface
+  // it as the same actionable failure rather than as "changed nothing".
+  if (spec.unauth.test(out)) {
+    return { ok: false, why: spec.name + ' rejected the request as unauthenticated',
+             how: spec.how, detail: out.split('\n').join(' ').slice(0, 240) };
+  }
+
+  const after = fs.readFileSync(path.join(PROJ_LINUX, FILE), 'utf8');
+  if (after === before) {
+    return { ok: false, why: spec.name + ' ran but changed nothing',
+             detail: out.split('\n').join(' ').slice(0, 240) };
+  }
+
+  const output = execFileSync('/usr/local/bin/lion',
+    ['cd ' + PROJ_LION + ' && /usr/bin/python ' + FILE],
+    { encoding: 'utf8', timeout: 120000 }).toString();
+  return { ok: true, tool: spec.name, output: output,
+           detail: 'the file grew by ' + (after.length - before.length) + ' bytes' };
 }
 
 async function shot(win, name) {
@@ -394,22 +428,28 @@ async function shot(win, name) {
   await shot(win, '08-terminal-profiles');
   await win.keyboard.press('Escape');
 
-  // ---- an actual AI making an actual edit, validated by running it ----
-  // The requirement is that Claude or Codex -- not only Gemini -- edits Lion
-  // code and the result is verified. Both need credentials, which are
-  // deliberately absent from this machine, so this stage reports SKIPPED with
-  // the exact command needed rather than quietly passing.
-  console.log('\n== an AI assistant edits the Lion code');
-  const aiResult = runAiEdit();
-  if (aiResult.skipped) {
-    console.log('  SKIP  ' + aiResult.why);
-    console.log('        run this on the machine, then re-run this test:');
-    console.log('          ' + aiResult.how);
-  } else {
-    check('the AI (' + aiResult.tool + ') edited the file',
-      aiResult.fileChanged, aiResult.detail);
-    check('the AI\'s edit runs correctly inside Lion',
-      /disk_free=/.test(aiResult.output), aiResult.output);
+  // ---- actual AIs making actual edits, each validated by running it -------
+  // BOTH Claude Code and Codex are exercised. On a fresh machine neither is
+  // signed in, so each stage FAILS -- not SKIPs -- with its own one-time
+  // sign-in command, and neither falls back to the other or to Gemini.
+  // `lion-ai-login` reports status and how to sign in.
+  console.log('\n== AI assistants edit the Lion code (Claude Code and Codex, both required)');
+  for (const spec of AI_ASSISTANTS) {
+    // A clean slate per assistant: the prompt adds disk_free(), so a file that
+    // already has it would make the next assistant "change nothing".
+    fs.writeFileSync(path.join(PROJ_LINUX, FILE), original);
+    console.log('   -- ' + spec.name);
+    const r = runAiEdit(spec);
+    if (!r.ok) {
+      check(spec.name + ' (signed in) edited Lion code and it ran in Lion', false,
+        r.why +
+        (r.how ? '\n  sign in once:  ' + r.how : '') +
+        (r.detail ? '\n  ' + r.detail : ''));
+    } else {
+      check(spec.name + ' edited the file', true, r.detail);
+      check(spec.name + "'s edit runs correctly inside Lion",
+        /disk_free=/.test(r.output), r.output);
+    }
   }
 
   // ---- put the file back --------------------------------------------
