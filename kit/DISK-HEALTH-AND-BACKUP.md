@@ -176,6 +176,14 @@ than starting over. Unreadable files are skipped and named in the log at
 `/var/log/macpro-backup/` rather than aborting the whole run — which matters on
 a disk with 2,839 recorded read failures.
 
+> **`backup-now` has never completed a real backup**, because no external drive
+> has been attached to this machine — the owner supplies that. What *has* been
+> tested: the copy itself (5.3 GB of `/home` plus `/etc` in about four minutes,
+> to a real destination), the exclusions, resumability, and the USB safety
+> interlock — verified by confirming both internal disks report `ID_BUS=ata` and
+> are refused as targets. The untested part is drive detection with a stick
+> actually plugged in. Expect the first run to want a moment's attention.
+
 ### Making it automatic
 
 A timer already runs daily. It does **nothing** unless it finds a USB drive

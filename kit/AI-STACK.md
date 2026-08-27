@@ -888,7 +888,7 @@ afternoon on them twice.
 
 | Message | Verdict |
 |---|---|
-| `i5k_amb ... failed with error -16` | The FB-DIMM temperature sensor cannot claim its I/O region (`-16` is `EBUSY`) because the firmware holds it. `acpi_enforce_resources=lax` on the kernel line would likely fix it and would give per-DIMM temperatures — genuinely useful on a machine with FB-DIMM history. **Not applied**, because this machine has an unexplained intermittent boot fault and adding a kernel parameter would confound that investigation. Worth revisiting once the boot fault is understood. |
+| `i5k_amb ... failed with error -16` | The FB-DIMM temperature sensor cannot claim its I/O region (`-16` is `EBUSY`) because firmware holds it through a PNP0c02 device. **`acpi_enforce_resources=lax` was tried and does NOT fix it** — the driver still fails with the parameter active, and releasing the reservation at runtime is refused by the pnp `system` driver with an I/O error. The parameter has been removed again, since it changed nothing. There are no per-DIMM temperatures on this machine; watch ECC counters through `rasdaemon` instead, which do work. |
 | `pw.conf: can't load config client.conf` | PipeWire is not installed; the portal looks for it anyway. Audio is unaffected — see Sound above. |
 | `alsa-restore.rules: GOTO has no matching label` | A genuinely broken rule Debian ships, ten errors per boot. Overridden in `/etc/udev/rules.d/90-alsa-restore.rules` rather than editing the shipped file, which an upgrade would revert. |
 | `Unknown username "geoclue"` | Location service partially installed. Harmless. |
