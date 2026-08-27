@@ -725,7 +725,38 @@ browser at `http://localhost:631`. Scanning is **Document Scanner**
 mDNS discovery already had its firewall hole (UDP 5353), so nothing needed
 opening. Printing is outbound, so it needs no inbound rule at all.
 
-### The ghost text on the desktop
+### Ghosting and trails on the desktop — turn compositing OFF
+
+**Compositing must stay disabled on this machine.** X runs on `fbdev` with a
+*shadow framebuffer* and no acceleration whatsoever, because `nomodeset` keeps
+the graphics driver off the card. Compositing on top of that does every window
+effect in software, misses damage regions, and produces icon trails and stale
+artefacts — which is exactly what was reported.
+
+```bash
+xfconf-query -c xfwm4 -p /general/use_compositing -s false
+```
+
+Verify it is really off, rather than trusting the setting — a compositor claims
+an X selection, so if nothing owns it, nothing is compositing:
+
+```bash
+xprop -root _NET_WM_CM_S0     # "not found" is correct here
+```
+
+Also enabled, for the same reason: `box_move` and `box_resize`, which draw an
+outline while dragging instead of repainting the whole window continuously.
+
+This is also a straight speed win. Software compositing on a 2.66 GHz Woodcrest
+pushing 2560×1440 is the single most expensive thing the desktop was doing.
+
+> **Restarting the window manager will end the session if you get it wrong.**
+> `xfwm4 --replace &` from an SSH session dies with that session and takes XFCE
+> down with it, dropping the user to the login screen. Use
+> `setsid nohup xfwm4 --replace >/dev/null 2>&1 </dev/null &`, or simply log out
+> and back in, which is what applies the setting anyway.
+
+### Stale console text at boot (a separate problem)
 
 Console text sometimes remains visible on the desktop. It is not screen burn-in
 and nothing is damaged.
