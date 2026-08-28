@@ -365,7 +365,22 @@ async function shot(win, name) {
   await win.keyboard.type('macos_version=', { delay: 40 });
   await win.waitForTimeout(1500);
   await shot(win, '03-find-replace');
-  await win.keyboard.press('Control+Alt+Enter');       // Replace All
+  // Click the Replace All BUTTON rather than press Ctrl+Alt+Enter. On this
+  // unaccelerated framebuffer the shortcut fired only intermittently (the run
+  // showed both fields filled and "1 of 1" but the rename never applied), which
+  // then cascaded into the build-task check. The button is unambiguous.
+  const replaceAll = win.locator(
+    '.find-widget .replace-actions .codicon-replace-all, ' +
+    '.find-widget .button.codicon-replace-all, ' +
+    '.find-widget [aria-label*="Replace All"], ' +
+    '.find-widget [title*="Replace All"]').first();
+  if (await replaceAll.count()) {
+    await replaceAll.click({ timeout: 8000 }).catch(async () => {
+      await win.keyboard.press('Control+Alt+Enter');   // fallback if not clickable
+    });
+  } else {
+    await win.keyboard.press('Control+Alt+Enter');     // fallback: button not found
+  }
   await win.waitForTimeout(3000);
   await win.keyboard.press('Escape');
   await win.keyboard.press('Control+S');
