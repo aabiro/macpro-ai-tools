@@ -58,8 +58,9 @@ The **"Lion project (runs in Mac OS X)"** folder is Lion's own filesystem, at
 - **From any terminal** — `lion-run /mnt/lion-live/Users/Shared/lion-demo/report.py`,
   or a raw command with `lion 'sw_vers'`.
 
-Path note: `/mnt/lion-live/Users/Shared/x` from Linux is `/Users/Shared/x`
-inside Lion — strip the `/mnt/lion-live` prefix for anything you hand to `lion`.
+Path note: `/mnt/lion-live/Users/Shared/lion-demo` from Linux is
+`/Users/Shared/lion-demo` inside Lion — strip the `/mnt/lion-live` prefix for
+anything you hand to `lion`.
 
 ## Two realities of this hardware
 
