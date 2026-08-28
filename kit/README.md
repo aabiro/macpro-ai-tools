@@ -28,6 +28,7 @@ Everything on this machine, explained. All of these files are also installed at
 | Signing up for accounts and API keys | [ACCOUNTS-AND-SIGN-IN.md](ACCOUNTS-AND-SIGN-IN.md) |
 | Using Linux and the old Mac system together | [USING-BOTH-SYSTEMS.md](USING-BOTH-SYSTEMS.md) |
 | Running the old Mac system as a virtual machine | [LION-VM.md](LION-VM.md) |
+| **Writing and running Lion code from VS Code** | [LION-DEV-QUICKSTART.md](LION-DEV-QUICKSTART.md) — edit Lion's files in VS Code, run them in Lion, with AI |
 | Day-to-day operating notes | [OPERATING-NOTES.md](OPERATING-NOTES.md) |
 | Making the machine faster or newer | [HARDWARE-UPGRADE-PATH.md](HARDWARE-UPGRADE-PATH.md) |
 | Things only a human can do | [HUMAN-STEPS.md](HUMAN-STEPS.md) |

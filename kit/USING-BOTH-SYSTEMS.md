@@ -204,6 +204,11 @@ Lion is genuinely unsafe to browse the web on — it stopped receiving security
 updates around 2014, and no current browser supports it. Use Linux for anything
 that touches the internet.
 
+To **write code for Lion**, you do not have to choose sides: VS Code on Linux can
+edit Lion's own files and run them inside Lion, with an AI assistant doing the
+work. That workflow has its own page —
+[LION-DEV-QUICKSTART.md](LION-DEV-QUICKSTART.md).
+
 ## Choosing at boot
 
 The boot menu appears at power-on. If you miss it, restart. Details, including
