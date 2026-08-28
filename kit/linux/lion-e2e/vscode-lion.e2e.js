@@ -414,22 +414,29 @@ async function shot(win, name) {
     /build=11G63/.test(run2), run2);
 
   // ---- the editor's own task must run in Lion, not on Linux ----------
-  console.log('\n== run the workspace task from the command palette');
+  // Run the DEFAULT BUILD task directly with Ctrl+Shift+B. Driving "Tasks: Run
+  // Task" through the command palette fuzzy-matched to "Restart Running Task"
+  // instead -- the run showed a "No running tasks to restart" toast and no task
+  // ever executed. tasks.json marks "Lion: run the open file" as the default
+  // build task, so the build shortcut runs it deterministically, no picker.
+  console.log('\n== run the default build task (Ctrl+Shift+B)');
   const logPath = path.join(PROJ_LINUX, '.vscode', 'last-run.log');
   fs.rmSync(logPath, { force: true });
   // The task command is lion-run "${file}", and ${file} is the ACTIVE editor's
   // path. With a webview active it would have been empty or wrong.
   await focusTheFile(win);
-  await win.keyboard.press('Control+Shift+P');
-  await win.waitForSelector('.quick-input-widget', { state: 'visible', timeout: MED });
-  await win.keyboard.type('Tasks: Run Task', { delay: 50 });
-  await win.waitForTimeout(4000);
-  await win.keyboard.press('Enter');
+  await win.keyboard.press('Control+Shift+B');
   await win.waitForTimeout(6000);
   await shot(win, '06-task-list');
-  await win.keyboard.type('Lion: run the open file', { delay: 40 });
-  await win.waitForTimeout(3000);
-  await win.keyboard.press('Enter');
+  // A single default build task runs immediately; only if a picker appears
+  // (multiple build tasks) do we need to choose the named one.
+  const taskPicker = win.locator('.quick-input-widget');
+  if (await taskPicker.isVisible().catch(() => false)) {
+    console.log('        (build-task picker appeared; selecting the Lion task)');
+    await win.keyboard.type('Lion: run the open file', { delay: 40 });
+    await win.waitForTimeout(2500);
+    await win.keyboard.press('Enter');
+  }
   await win.waitForTimeout(30000);                   // task runs over ssh
   await shot(win, '07-task-ran');
 
