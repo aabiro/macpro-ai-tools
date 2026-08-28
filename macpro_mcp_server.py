@@ -14,6 +14,7 @@ machine at /Users/Shared/ai-cockpit/docs/OPERATING-NOTES.md.
 """
 
 import base64
+import os
 import shlex
 import subprocess
 
@@ -584,5 +585,287 @@ echo "dest used after: $(df -m "$DST" | tail -1 | awk '{{print $3}}') MB"
     return g5_run_detached(script, job_name)
 
 
+# ==========================================================================
+# Debian side
+# ==========================================================================
+# Everything above drives Mac OS X. These drive the Debian install on the other
+# disk. Only ONE of the two runs at a time, so every tool here has to say so
+# plainly when the machine is booted into Lion instead -- an empty result would
+# otherwise read as "nothing wrong".
+#
+# IdentitiesOnly=yes is not optional. Without it ssh offers every key in
+# ~/.ssh before the one named, each rejection logs "Failed publickey", and
+# fail2ban on this machine counts those as an attack. Automated use banned the
+# administrator five times in one evening, and the symptom -- port 22 refusing
+# while every other service answered -- was misread twice as sshd having failed.
+
+LINUX_USER = os.environ.get("MACPRO_LINUX_USER", "macpro")
+# Do NOT reach the Debian side through the "macpro" ssh_config alias. That alias
+# was written when this machine ran Mac OS X natively: it says
+# User administrator, IdentityFile ~/.ssh/id_rsa and forces ssh-rsa/ssh-dss
+# algorithms, and it pins an old host key. Debian needs a different user, a
+# different key, and has a new host key -- so the alias produces
+# "Permission denied (publickey)" and, after a few tries, a fail2ban ban.
+# Name the host, the user and the key explicitly here.
+LINUX_HOST = os.environ.get("MACPRO_LINUX_HOST", "192.168.1.124")
+LINUX_KEY = os.environ.get(
+    "MACPRO_LINUX_KEY", os.path.expanduser("~/.ssh/id_ed25519"))
+LINUX_TARGET = f"{LINUX_USER}@{LINUX_HOST}"
+LINUX_SSH_OPTS = [
+    "-i", LINUX_KEY,
+    "-o", "BatchMode=yes",
+    "-o", "ConnectTimeout=15",
+    # IdentitiesOnly without an IdentityFile offers NO key at all, which is how
+    # this broke: the -i above is what makes it meaningful.
+    "-o", "IdentitiesOnly=yes",
+    "-o", "StrictHostKeyChecking=no",
+    "-o", "UserKnownHostsFile=/dev/null",
+    "-o", "LogLevel=ERROR",
+]
+
+
+def run_linux_command(cmd: str, timeout: int = DEFAULT_TIMEOUT) -> str:
+    """Run a command on the Debian side, distinguishing 'off' from 'broken'."""
+    argv = ["ssh"] + LINUX_SSH_OPTS + [LINUX_TARGET, cmd]
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return "TIMEOUT after %ss. The machine may be mid-boot." % timeout
+    out = (p.stdout or "") + (p.stderr or "")
+    if p.returncode != 0 and "Connection refused" in out:
+        return ("Debian is not answering on SSH.\n\n"
+                "Most likely the machine is booted into Mac OS X instead -- only one "
+                "of the two runs at a time. If Debian IS booted, the next suspect is "
+                "fail2ban having banned this host, NOT a failed sshd: a refused "
+                "connection means something sent a reset. Check with\n"
+                "    sudo fail2ban-client status sshd")
+    if p.returncode != 0 and ("No route to host" in out or "timed out" in out):
+        return "The machine is not reachable at all. It may be powered off."
+    return _clip(out.strip() or "(no output)")
+
+
+@mcp.tool()
+def g5_linux_boot_health() -> str:
+    """
+    Report the numbers that decide whether the Debian side can boot at all.
+
+    Returns measurements, never a verdict, because a verdict can be confidently
+    wrong in a way a byte count cannot.
+
+    The initramfs size is the first thing to read and the reason this tool
+    exists. This machine loads a 64-bit kernel through a 32-bit EFI loader, and
+    past roughly 70-80 MB the kernel never starts -- printing NOTHING, not even
+    with earlyprintk and initcall_debug. A DKMS driver install silently rebuilds
+    that image for every installed kernel and pushed it to 85 MB, which made the
+    machine unbootable with no diagnostic output whatsoever. Three wrong causes
+    were proposed before anyone ran `ls -la /boot`, which shows it instantly.
+
+    Healthy is roughly 20 MB with MODULES=dep. Anything approaching 70 MB should
+    be treated as a boot failure waiting for the next restart.
+    """
+    return run_linux_command(
+        "echo '--- kernel and boot line ---'; uname -r; cat /proc/cmdline; "
+        "echo; echo '--- initramfs images (SIZE IS THE POINT) ---'; "
+        "ls -la /boot/initrd.img-* /boot/vmlinuz-* 2>/dev/null; "
+        "echo; echo '--- initramfs policy ---'; "
+        "grep -E '^MODULES|^COMPRESS' /etc/initramfs-tools/initramfs.conf 2>/dev/null; "
+        "echo 'forced modules:'; grep -vE '^#|^$' /etc/initramfs-tools/modules 2>/dev/null; "
+        "echo; echo '--- last boots ---'; "
+        "sudo -n journalctl --list-boots --no-pager 2>/dev/null | tail -5; "
+        "echo; echo '--- failed units ---'; "
+        "systemctl list-units --state=failed --no-pager --plain 2>/dev/null | grep -c '\\.service'"
+    )
+
+
+@mcp.tool()
+def g5_linux_desktop_exec(command: str) -> str:
+    """
+    Run a command inside the logged-in desktop session on the Debian side.
+
+    Use this for anything touching the GUI -- xfconf-query, wmctrl, notify-send,
+    launching an application. A plain SSH command cannot do those: it has no
+    DISPLAY, no XAUTHORITY and no session bus, so GUI commands either fail or,
+    far worse, appear to succeed while changing nothing.
+
+    THE TRAP THIS TOOL EXISTS TO CLOSE. Resolving the session by hand with
+    `pgrep -f xfce4-session` matches the shell whose own command line contains
+    that string -- your own command. It returns your PID, the environment comes
+    back EMPTY, and every xfconf-query and wmctrl afterwards silently does
+    nothing while exiting 0. That produced three separate false "fixed it"
+    conclusions in one evening. This tool uses `pgrep -x`, which matches the
+    process NAME and cannot match the caller.
+
+    It refuses to run at all rather than run without a display, because a
+    command that quietly does nothing is worse than one that fails.
+    """
+    safe = shlex.quote(command)
+    return run_linux_command(
+        # pgrep -x: exact process NAME. Never -f here.
+        "SPID=$(pgrep -x xfce4-session | head -1); "
+        "if [ -z \"$SPID\" ]; then "
+        "  echo 'REFUSED: no desktop session is running (nobody is logged in).'; "
+        "  echo 'Xorg/lightdm state:'; systemctl is-active lightdm; "
+        "  pgrep -x -c Xorg | sed 's/^/  Xorg processes: /'; exit 1; fi; "
+        "export $(tr '\\0' '\\n' < /proc/$SPID/environ | "
+        "  grep -E '^(DISPLAY|XAUTHORITY|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR)=' | xargs); "
+        "if [ -z \"$DISPLAY\" ]; then "
+        "  echo 'REFUSED: resolved a session but DISPLAY is empty; not running blind.'; exit 1; fi; "
+        "echo \"[session pid $SPID, DISPLAY=$DISPLAY]\"; "
+        "sh -c " + safe + " 2>&1; "
+        "echo \"[exit $?]\""
+    )
+
+
+@mcp.tool()
+def g5_linux_screenshot(save_dir: str = "/tmp") -> str:
+    """
+    Capture the Debian desktop and bring the image back to this machine.
+
+    Written because being unable to SEE that screen caused repeated wrong
+    conclusions. Services were verified over SSH and reported as "everything is
+    fine" while the display state was entirely unknown -- and the owner, who
+    could see it, was the only one who knew. Checking a service says nothing
+    about what is on screen.
+
+    Returns the local path plus measurements, and it checks the image is not
+    blank. A screenshot of a black screen and a failed capture look identical if
+    you only check that a file was produced, so the mean pixel value is reported
+    and a uniform image is called out rather than passed off as success.
+    """
+    remote = "/tmp/g5-shot.png"
+    grab = run_linux_command(
+        "SPID=$(pgrep -x xfce4-session | head -1); "
+        "if [ -z \"$SPID\" ]; then echo 'REFUSED: no desktop session'; exit 1; fi; "
+        "export $(tr '\\0' '\\n' < /proc/$SPID/environ | "
+        "  grep -E '^(DISPLAY|XAUTHORITY)=' | xargs); "
+        "command -v scrot >/dev/null || { echo 'REFUSED: scrot not installed'; exit 1; }; "
+        f"rm -f {remote}; scrot -o {remote} 2>&1 && echo CAPTURED && "
+        f"stat -c '%s bytes' {remote}"
+    )
+    if "CAPTURED" not in grab:
+        return "Capture failed on the machine:\n" + grab
+
+    local = os.path.join(save_dir, "g5-shot.png")
+    argv = ["scp"] + LINUX_SSH_OPTS + [f"{LINUX_TARGET}:{remote}", local]
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return "Captured on the machine but the copy back timed out."
+    if p.returncode != 0 or not os.path.exists(local):
+        return "Captured but could not copy back:\n" + (p.stderr or "")[:400]
+
+    facts = [f"saved: {local}", f"size: {os.path.getsize(local)} bytes"]
+    try:
+        from PIL import Image, ImageStat
+        im = Image.open(local)
+        facts.append(f"dimensions: {im.width}x{im.height}")
+        stat = ImageStat.Stat(im.convert("L"))
+        mean, stddev = stat.mean[0], stat.stddev[0]
+        facts.append(f"mean brightness: {mean:.1f}, variation: {stddev:.1f}")
+        # A real desktop has structure. Near-zero variation means a blank screen,
+        # which is a finding, not a successful screenshot.
+        if stddev < 2.0:
+            facts.append("WARNING: image is essentially uniform -- the screen is "
+                         "blank or the capture did not reflect the display.")
+        else:
+            facts.append("image has real content (not a blank screen)")
+    except ImportError:
+        facts.append("Pillow not installed here, so blankness was NOT checked")
+    except Exception as exc:  # noqa: BLE001
+        facts.append(f"could not analyse the image: {exc}")
+    return "\n".join(facts)
+
+
+# --- Lion as a VM guest -------------------------------------------------------
+#
+# Lion normally cannot be reached while Debian is running: one OS owns the
+# hardware at a time. Running Lion as a QEMU guest removes that limit, and
+# these two tools are the whole point of having done it -- an assistant can
+# read, change and EXECUTE inside Mac OS X 10.7 without rebooting anything.
+#
+# Safety property worth stating plainly: the guest cannot write Lion's physical
+# disk. /dev/sdb is the qcow2 backing file and QEMU opens it read-only, so all
+# guest writes land in an overlay. Nothing done through these tools can damage
+# the real Lion install. See kit/LION-VM.md.
+
+
+@mcp.tool()
+def g5_lion_vm_control(action: str = "status") -> str:
+    """
+    Start, stop or inspect the Lion virtual machine on the Debian side.
+
+    action: "status" | "start" | "stop" | "screenshot"
+      status      running? overlay size? last lines the firmware printed?
+      start       boot it headless and wait until its sshd answers (~60-90s)
+      stop        clean shutdown from inside the guest, then stop QEMU
+      screenshot  capture the guest screen and report whether it is lit
+
+    A black screen is NORMAL in the default boot: Mac OS X 10.7 has no driver
+    for the virtual display, so nothing is drawn even though the OS is running
+    perfectly underneath. Judge liveness with g5_lion_exec, never by the screen.
+
+    Requires Debian to be the booted OS -- the VM runs on that side.
+    """
+    action = (action or "status").strip().lower()
+    if action == "status":
+        return run_linux_command("lion-vm status", timeout=60)
+    if action == "start":
+        # start returns immediately, so wait for sshd or the caller cannot tell
+        # a slow boot from a failed one.
+        return run_linux_command("lion-vm start && lion-vm wait", timeout=420)
+    if action == "stop":
+        return run_linux_command("lion-vm stop", timeout=240)
+    if action == "screenshot":
+        return run_linux_command("lion-vm screenshot /tmp/lion-shot.png", timeout=120)
+    return ("Unknown action %r. Use one of: status, start, stop, screenshot."
+            % action)
+
+
+@mcp.tool()
+def g5_lion_exec(command: str, timeout: int = 120) -> str:
+    """
+    Run a shell command as root INSIDE the Lion virtual machine.
+
+    This is Mac OS X 10.7.5, so it is BSD userland: no GNU long options, no
+    `sed -i` without an argument, `defaults` instead of a registry, and
+    /usr/bin/python is Python 2.7.
+
+    Examples:
+        g5_lion_exec("sw_vers")
+        g5_lion_exec("ls -la /Users/administrator")
+        g5_lion_exec("defaults read /Library/Preferences/com.apple.loginwindow")
+
+    If this reports that the VM is not answering, start it with
+    g5_lion_vm_control("start") -- it is not running by default, because it
+    costs 3 GB of RAM on a machine that has under 8.
+
+    Changes made here land in the VM's overlay, NOT on Lion's real disk. That
+    makes it safe for experiments, and also means changes do not persist into
+    the Lion you get by rebooting the machine.
+    """
+    if not command or not command.strip():
+        return "No command given."
+    # Single-quote for the outer shell; the wrapper on the far side re-quotes.
+    quoted = "'" + command.replace("'", "'\\''") + "'"
+    out = run_linux_command("lion " + quoted, timeout=timeout)
+    if "no matching host key type" in out:
+        return ("The guest's sshd answered but the algorithms were rejected. That "
+                "means /usr/local/bin/lion was bypassed -- it exists precisely to "
+                "pass HostKeyAlgorithms=+ssh-rsa for Lion's OpenSSH 5.x.")
+    if "Connection refused" in out or "Connection closed" in out:
+        return ("The Lion VM is not answering. It is not running by default; "
+                "start it with g5_lion_vm_control(\"start\").\n\nRaw: " + out)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Entry point. It MUST stay last.
+#
+# @mcp.tool() registers a function when the decorator RUNS, so anything
+# defined below mcp.run() is never registered -- the server exits first.
+# Five tools sat below this block and were invisible to every client while
+# looking perfectly correct in the source. test-mcp-remote.py exists to catch
+# exactly that: it asserts on the advertised tool list, not on the file.
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     mcp.run(transport="stdio")
