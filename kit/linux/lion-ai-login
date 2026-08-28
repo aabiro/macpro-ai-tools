@@ -46,8 +46,10 @@ PY
 }
 
 codex_signed_in() {
+  # `codex exec` (what the loop drives) authenticates via OPENAI_API_KEY in the
+  # environment. A ~/.codex/auth.json (ChatGPT login) is NOT usable by exec on
+  # this build, so it does not count -- gate on the env var exec actually needs.
   [ -n "${OPENAI_API_KEY:-}" ] && return 0
-  [ -f "$HOME_DIR/.codex/auth.json" ] && return 0
   return 1
 }
 
@@ -103,9 +105,9 @@ if ! have codex; then
 else
   if codex_signed_in; then green "signed in"; echo; else
     red "installed, NOT signed in"; echo
-    echo "   this codex build has no 'login' subcommand; give it a key:"
-    echo "       echo 'export OPENAI_API_KEY=sk-...' >> ~/.profile && . ~/.profile"
-    echo "     (or place the token at ~/.codex/auth.json)"
+    echo "   codex exec needs OPENAI_API_KEY in the environment (ephemeral is fine):"
+    echo "       export OPENAI_API_KEY=sk-...      # this shell only; not persisted"
+    echo "     (a ~/.codex/auth.json / ChatGPT login is NOT usable by 'codex exec' here)"
   fi
 fi
 echo

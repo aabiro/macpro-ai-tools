@@ -118,12 +118,15 @@ function claudeSignedIn() {
   return false;
 }
 
-/** Is Codex signed in? Key in the environment, or a token file it wrote. */
+/**
+ * Is Codex usable for a headless edit? `codex exec` authenticates via
+ * OPENAI_API_KEY in the environment. A ~/.codex/auth.json (a ChatGPT login) is
+ * NOT usable by `codex exec` on this build -- trusting it makes the gate pass
+ * and the run fail deep with "Missing environment variable: OPENAI_API_KEY".
+ * So gate strictly on the env var the exec path actually needs.
+ */
 function codexSignedIn() {
-  if (process.env.OPENAI_API_KEY) return true;
-  const home = process.env.HOME || '/home/macpro';
-  try { if (fs.existsSync(path.join(home, '.codex', 'auth.json'))) return true; } catch (e) { /* fall through */ }
-  return false;
+  return !!process.env.OPENAI_API_KEY;
 }
 
 // Claude Code and Codex are BOTH required and BOTH exercised -- neither is a
@@ -136,13 +139,16 @@ const AI_ASSISTANTS = [
     unauth: /invalid api key|please run \/login|not authenticated|credit balance|unauthorized/i,
     how: 'lion-ai-login          # then:  claude   ->  /login' },
   { name: 'Codex', bin: '/usr/local/bin/codex',
-    // The Lion project is a plain folder, not a git repo, so codex refuses with
-    // "--skip-git-repo-check was not specified" unless we pass it. --full-auto
-    // sandboxes the run; the edit itself is a local file write.
-    argv: ['exec', '--full-auto', '--skip-git-repo-check', AI_PROMPT],
+    // - --skip-git-repo-check: the Lion project is a plain folder, not a git
+    //   repo, so codex otherwise refuses.
+    // - -c mcp_servers={}: this machine's ~/.codex/config.toml points at npx
+    //   MCP servers that cannot be fetched offline; without this override they
+    //   time out and add minutes to every run for no benefit here.
+    // --full-auto sandboxes the run; the edit itself is a local file write.
+    argv: ['exec', '--full-auto', '--skip-git-repo-check', '-c', 'mcp_servers={}', AI_PROMPT],
     signedIn: codexSignedIn,
     unauth: /not (logged in|authenticated)|missing api key|unauthorized|401|sign in|OPENAI_API_KEY/i,
-    how: 'lion-ai-login          # then set OPENAI_API_KEY (or ~/.codex/auth.json)' },
+    how: 'export OPENAI_API_KEY=sk-...   (ephemeral; codex exec needs it in the env)' },
 ];
 
 /**
@@ -217,8 +223,12 @@ async function shot(win, name) {
   if (!process.env.LION_E2E_ALLOW_BUSY) {
     let others = 0;
     try {
+      // The [c] bracket keeps this pgrep from matching its OWN command line
+      // (which contains the pattern) -- the classic self-match. serve-web is the
+      // headless browser editor, not a desktop editor that would collide, so
+      // exclude it too.
       others = parseInt(execFileSync('bash', ['-lc',
-        'pgrep -af "/usr/share/code/code" | grep -v "lion-e2e/[u]data" | grep -c . || true'],
+        'pgrep -af "/usr/share/[c]ode/code" | grep -v "lion-e2e/[u]data" | grep -v "serve-web" | grep -c . || true'],
         { encoding: 'utf8' }).trim(), 10) || 0;
     } catch (e) { /* pgrep absent: skip the guard rather than block */ }
     check('the desktop is free (no other VS Code open on this GPU-less display)',
