@@ -89,6 +89,16 @@ Terminal tools formatted for compatibility with Python 2.7.1 and standard OS X L
 
 ---
 
+### 4. Mac Pro 1,1 Handover Kit ([`g5-handoff/`](g5-handoff/README.md))
+Everything used to hand the Mac Pro to a new owner as a documented, working machine. Moved here from `pixelenhance-labs/docs/g5-handoff` with its full history.
+- **Docs**: [`HANDOFF.md`](g5-handoff/HANDOFF.md) (machine state), [`IMPLEMENTATION-PLAN.md`](g5-handoff/IMPLEMENTATION-PLAN.md), and the owner guides in [`kit/`](g5-handoff/kit/README.md) (start with `NEW-OWNER-START-HERE.md`).
+- **`kit/cockpit-web/`**: Next.js web cockpit for the same OpenAI / Anthropic / Gemini models.
+- **`kit/gateway/aigw.py`**: the gateway as deployed on the machine.
+- **`kit/remote-control/`**: the MCP server and helpers used to operate the machine remotely.
+- **`kit/macos-lion/`, `kit/linux/`**: starter kits for each OS. **`kit/scrub/`** is a privacy scrub — do not run it on this handover (see `g5-handoff/README.md`).
+
+---
+
 ## 🛠 Configuration & Environment Setup
 
 Copy `.env.example` to `.env` and fill in your model provider keys:

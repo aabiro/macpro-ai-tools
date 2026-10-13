@@ -350,4 +350,4 @@ Start with **NEW-OWNER-START-HERE.md**, then **ACCOUNTS-AND-SIGN-IN.md** (which
 account each tool needs), then **FIRST-RUN-CHECKLIST.md**.
 
 If the machine will not start at all, those same files are in the project
-repository under `docs/g5-handoff/kit/`.
+repository (github.com/aabiro/macpro-ai-tools) under `g5-handoff/kit/`.

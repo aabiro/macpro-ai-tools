@@ -9,7 +9,7 @@ out to be genuinely hard when doing real work on the machine remotely:
   * knowing what needs root before wasting calls on it -> g5_privileges
 
 Each of those encodes a mistake that cost real time. See the notes in
-pixelenhance-labs/docs/g5-handoff/kit/OPERATING-NOTES.md, mirrored on the
+macpro-ai-tools/g5-handoff/kit/OPERATING-NOTES.md, mirrored on the
 machine at /Users/Shared/ai-cockpit/docs/OPERATING-NOTES.md.
 """
 

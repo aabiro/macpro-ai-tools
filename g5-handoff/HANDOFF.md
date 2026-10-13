@@ -333,7 +333,7 @@ ssh-rsa,ssh-dss`, which looks like a failure but is only a policy mismatch.
 ## 9. Files in this handover
 
 ```
-docs/g5-handoff/
+g5-handoff/
 ├── HANDOFF.md                      this document
 ├── IMPLEMENTATION-PLAN.md          the phased build plan
 ├── README.md                       index
