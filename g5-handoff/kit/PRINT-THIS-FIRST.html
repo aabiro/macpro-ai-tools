@@ -1,0 +1,372 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Mac Pro - start here</title><style>
+ @page { margin: 16mm; }
+ body { font: 11.5pt/1.5 Georgia, "Times New Roman", serif; max-width: 46em; margin: 0 auto; color:#000; }
+ h1 { font-size: 19pt; border-bottom: 2px solid #000; padding-bottom:.2em; margin-top:1.4em; }
+ h2 { font-size: 13.5pt; margin-top:1.4em; page-break-after: avoid; }
+ pre { background:#f2f2f2; border-left:3px solid #666; padding:.6em .8em; font:10pt Menlo,Consolas,monospace;
+       white-space:pre-wrap; page-break-inside: avoid; }
+ code { font:10.5pt Menlo,Consolas,monospace; background:#f2f2f2; padding:0 .2em; }
+ table { border-collapse:collapse; width:100%; margin:.7em 0; page-break-inside:avoid; }
+ td { border:1px solid #999; padding:.35em .5em; vertical-align:top; font-size:11pt; }
+ tr td:first-child { width:32%; }
+ hr { border:0; border-top:1px solid #000; margin:1.6em 0; }
+ li { margin:.2em 0; }
+ strong { font-weight:700; }
+ @media print { a { text-decoration:none; color:#000; } }
+</style></head><body>
+<h1>Mac Pro — start here</h1>
+
+<p><strong>Print this and keep it with the machine.</strong> It covers everything from pressing</p>
+<p>the power button to having a working AI assistant. You do not need to know</p>
+<p>anything about Linux, programming or AI.</p>
+
+<p>Two systems are installed. Both work. You choose at power-on.</p>
+
+<table>
+<tr><td><strong>Debian Linux</strong></td><td>the modern side. AI tools, web browser, code editor.</td></tr>
+<tr><td><strong>Mac OS X Lion</strong></td><td>the original 2006 system, with the previous owner's files.</td></tr>
+</table>
+
+<hr>
+
+<h2>1. Power on</h2>
+
+<p>Press the power button once. Wait.</p>
+
+<p><strong>If you see a desktop with a teal background — you are done, skip to step 3.</strong></p>
+
+<p><strong>If the screen stays black for more than two minutes</strong>, that is a known fault</p>
+<p>with a known fix. Go to step 2.</p>
+
+<h2>2. Choosing which system starts</h2>
+
+<p>Hold the <strong>Option</strong> key (⌥, next to the spacebar) <strong>before</strong> you press power,</p>
+<p>and keep holding it until icons appear.</p>
+
+<p>You will see up to three icons:</p>
+
+<pre>
+   [ Lion ]        [ EFI Boot ]         [ EFI Boot ]
+   silver           SILVER               ORANGE
+   Mac OS X         Debian Linux         USB stick, if inserted
+</pre>
+
+<li><strong>Silver "EFI Boot"</strong> — Debian Linux. <strong>This is the normal choice.</strong></li>
+<li><strong>"Lion"</strong> — the old Mac system.</li>
+<li><strong>Orange</strong> — only appears with a USB stick in. Ignore it.</li>
+
+<p>Click the silver <strong>EFI Boot</strong>, then press Return.</p>
+
+<p>A black-and-white menu appears. The top line is already selected:</p>
+
+<pre>
+&gt; Debian GNU/Linux (normal)
+  Debian - repair filesystem (forced fsck)
+  Debian - emergency shell
+  ...
+</pre>
+
+<p>Press <strong>Return</strong>. Wait up to two minutes.</p>
+
+<p><strong>If that fails, come back and pick the second line</strong> — "repair filesystem".</p>
+<p>It checks the disk for damage and takes a few minutes longer. It is safe.</p>
+
+<h2>3. Logging in</h2>
+
+<p>Username: <strong>macpro</strong></p>
+<p>Password: <strong>supplied separately with this machine</strong></p>
+
+<h2>4. Switch the AI on — the only setup step</h2>
+
+<p>Open a <strong>Terminal</strong> window (the black icon in the bar at the bottom of the</p>
+<p>screen), then type this and press Return:</p>
+
+<pre>
+ai setup
+</pre>
+
+<p>It will ask which AI provider you want, show you the web page to sign up on, and</p>
+<p>ask you to paste the key it gives you. It then **tests the key before saving</p>
+<p>it** — if the key is wrong it tells you why and changes nothing.</p>
+
+<p>Google Gemini has a free option and is the easiest place to start.</p>
+
+<p>That is the whole setup. Everything else is already installed.</p>
+
+<h2>Getting the key to paste &mdash; step by step</h2>
+
+<p>You need an account with an AI provider, and a &ldquo;key&rdquo; from it. A key
+is a long password that lets a program use the AI on your behalf. It is
+<strong>not</strong> your account password, and it is tied to money, so read the
+cost notes before starting.</p>
+
+<p><strong>The short version, for the free one:</strong></p>
+
+<ol>
+<li>On any computer, go to <strong>aistudio.google.com/apikey</strong></li>
+<li>Sign in with a Google (Gmail) account &mdash; make one there if you have none</li>
+<li>Click <strong>Create API key</strong> and copy the long string starting <code>AIza</code></li>
+<li>On this machine, run <code>ai setup</code>, choose Google Gemini, and paste it.
+Paste with <strong>Ctrl+Shift+V</strong> &mdash; plain Ctrl+V does not work in a
+Terminal, and you will not see the key appear as you paste. That is normal.</li>
+</ol>
+
+<p><strong>The full guide</strong> &mdash; Anthropic, OpenAI and GitHub as well,
+what each costs, how to set a spending limit, how to sign in to the editor
+extensions, and how to recover if a key leaks &mdash; is on this machine:</p>
+
+<pre>glow /usr/local/share/doc/macpro/kit/ACCOUNTS-AND-SIGN-IN.md</pre>
+
+<p><strong>No key is included with this machine, and no previous owner's account
+is attached to it.</strong> Until you add one, the AI tools start up and politely
+refuse to do anything. That is correct behaviour, not a fault.</p>
+
+<h2>5. Backing up &mdash; do this before you trust the machine</h2>
+
+<p><strong>One of the two hard disks in this machine is wearing out.</strong>
+That was true at handover and it is documented. It does not stop you using the
+computer; it does mean anything you care about needs a second copy.</p>
+
+<p>Plug in a USB drive and type:</p>
+
+<pre>sudo backup-now</pre>
+
+<p>It asks which drive, then copies your files. It <strong>never deletes
+anything</strong>, and it <strong>cannot write to the machine's internal
+disks</strong> &mdash; it only ever writes to USB. Ctrl-C is safe; running it
+again carries on where it stopped.</p>
+
+<p>To check afterwards: <code>backup-now --status</code></p>
+
+<p><strong>If a file called <code>DISK-WARNING-READ-ME.txt</code> ever appears on
+the desktop</strong>, the computer is telling you the disk has got worse. Read
+it. Do a backup that day. Do not reinstall anything.</p>
+
+<h2>6. The only commands worth remembering</h2>
+
+<p>Type these in a Terminal:</p>
+
+<table>
+<tr><td>Type this</td><td>What happens</td></tr>
+<tr><td><code>ai</code></td><td>tells you what to do next</td></tr>
+<tr><td><code>ai setup</code></td><td>switch the AI on (step 4)</td></tr>
+<tr><td><code>ai check</code></td><td>plain-English report on anything wrong</td></tr>
+<tr><td><code>ai fix</code></td><td>repairs what is safe to repair</td></tr>
+<tr><td><code>ai chat</code></td><td>talk to an AI</td></tr>
+<tr><td><code>ai help</code></td><td>one screen listing everything</td></tr>
+<tr><td><code>ai undo</code></td><td>undoes the last change <code>ai</code> made</td></tr>
+</table>
+
+<p><strong>None of these can break the machine.</strong> There is no delete in any of them.</p>
+
+<h2>7. In a web browser</h2>
+
+<p>From this machine, or from a laptop on the same network:</p>
+
+<pre>
+http://&lt;this machine&#x27;s address&gt;:3000     the AI Cockpit
+http://&lt;this machine&#x27;s address&gt;:8443     the code editor
+</pre>
+
+<p>Type <code>ai help</code> to see the exact addresses. The editor's password is stored on</p>
+<p>the machine; <code>ai help</code> tells you where.</p>
+
+<hr>
+
+<h1>Credentials for this machine</h1>
+
+<p><strong>Fill these in by hand before handing the machine over.</strong> They are deliberately</p>
+<p>not stored in any file or repository — a password written into version control</p>
+<p>stays recoverable in its history forever, long after anyone deletes it. A printed</p>
+<p>sheet that travels with the hardware is the right place for them.</p>
+
+<pre>
+  Login username . . . . .  macpro
+
+  Login password . . . . .  ______________________________
+
+  Root password  . . . . .  ______________________________
+                            (if one was set during install)
+</pre>
+
+<p>To set or change the login password, on the machine:</p>
+
+<pre>
+sudo passwd macpro
+</pre>
+
+<p>It asks twice and echoes nothing. That is the only place the password should be</p>
+<p>typed.</p>
+
+<p>### Everything else is not a password</p>
+
+<table>
+<tr><td>What</td><td>Where it lives on the machine</td></tr>
+<tr><td>VS Code browser access</td><td><code>cat ~/.vscode-web/connection-token</code></td></tr>
+<tr><td>AI provider keys</td><td><code>/etc/ai-cockpit/env</code> — set them with <code>ai setup</code></td></tr>
+</table>
+
+<p>Neither is a login credential, and both can be regenerated freely.</p>
+
+<hr>
+
+<h1>What is installed on this machine</h1>
+
+<p>Everything below is already working. You do not have to install anything.</p>
+
+<h2>The AI assistants</h2>
+
+<p><strong>All four AI assistants are in the editor too</strong> — Copilot is built in, and</p>
+<p>Claude, Gemini and ChatGPT/Codex are installed as extensions. Signing in to each</p>
+<p>is covered in ACCOUNTS-AND-SIGN-IN.md.</p>
+
+<table>
+<tr><td>Command</td><td>What it is</td></tr>
+<tr><td><code>claude</code></td><td>Claude Code. A coding and general assistant that runs in a Terminal window.</td></tr>
+<tr><td><code>claude-dark20</code></td><td>The same thing with a dark colour scheme.</td></tr>
+<tr><td><code>claude-desktop</code></td><td>Claude as a normal window with buttons, rather than in a Terminal.</td></tr>
+<tr><td><code>gemini</code></td><td>Google's assistant, in a Terminal. Has a free option.</td></tr>
+<tr><td><code>codex</code></td><td>OpenAI's coding assistant, in a Terminal.</td></tr>
+<tr><td><code>aider</code></td><td>Edits files in a project for you, guided by conversation.</td></tr>
+<tr><td><code>gh</code></td><td>GitHub from the command line.</td></tr>
+</table>
+
+<h2>Made for this machine</h2>
+
+<table>
+<tr><td>Command</td><td>What it is</td></tr>
+<tr><td><code>ai</code></td><td><strong>Start here.</strong> Tells you what to do next, and fixes things.</td></tr>
+<tr><td><code>g5-copilot</code></td><td>Ask "how do I …?" and it suggests a command. <strong>It never runs it.</strong></td></tr>
+<tr><td><code>g5-codex</code></td><td>Ask it to change a file. It shows you the change before applying it.</td></tr>
+<tr><td><code>g5-gemini</code></td><td>A conversation, in plain text.</td></tr>
+<tr><td><code>ai-session</code></td><td>A work session that survives closing the window.</td></tr>
+<tr><td><code>macpro-doctor</code></td><td>Full health report on the hardware.</td></tr>
+<tr><td><code>macpro-telemetry</code></td><td>The same information as data, refreshed every 5 minutes.</td></tr>
+</table>
+
+<p>The three <code>g5-</code> tools also work on the <strong>old Mac OS X side</strong> of this machine,</p>
+<p>which nothing else does. They send their questions through the gateway below.</p>
+
+<h2>The web apps</h2>
+
+<table>
+<tr><td>Address</td><td>What it is</td></tr>
+<tr><td><code>:3000</code></td><td><strong>The AI Cockpit.</strong> Chat, a machine health page, and a tool that rewrites modern code so it runs on the 2006 Mac system.</td></tr>
+<tr><td><code>:8443</code></td><td><strong>Visual Studio Code.</strong> The real thing, in a browser. Works from your laptop too. Needs the access token — see below.</td></tr>
+<tr><td><code>:8081</code></td><td><strong>The AI Gateway.</strong> Not something you visit. It lets the old Mac OS X side reach modern AI services, which it cannot do on its own.</td></tr>
+</table>
+
+<p>Type <code>ai help</code> to see the exact addresses for this machine.</p>
+
+<h2>Running quietly in the background</h2>
+
+<table>
+<tr><td><strong>rasdaemon</strong></td><td>Watches the memory for errors. This is the early warning for the fault described overleaf.</td></tr>
+<tr><td><strong>Automatic security updates</strong></td><td>Applied without you doing anything.</td></tr>
+<tr><td><strong>Firewall</strong></td><td>Only your home network can reach this machine. Nothing is exposed to the internet.</td></tr>
+<tr><td><strong>A local AI model</strong></td><td>Works with no internet at all, but is very slow (about a word per second). For emergencies.</td></tr>
+</table>
+
+<h2>Also installed &mdash; the everyday applications</h2>
+
+<p>All of these are in the <strong>Applications</strong> menu, top-left of the
+screen. You do not need the AI to use any of them.</p>
+
+<table>
+<tr><td><strong>Firefox</strong></td><td>Web browser. Current version, not an old one.</td></tr>
+<tr><td><strong>LibreOffice</strong></td><td>Documents, spreadsheets and presentations. Opens and saves Word and Excel files.</td></tr>
+<tr><td><strong>VLC</strong></td><td>Plays video and music &mdash; essentially any file you give it.</td></tr>
+<tr><td><strong>GIMP</strong></td><td>Photo and image editing.</td></tr>
+<tr><td><strong>OpenShot</strong></td><td>Video editing on a timeline.</td></tr>
+<tr><td><strong>Thunar</strong></td><td>The file manager, for browsing your files.</td></tr>
+<tr><td><strong>Terminal</strong></td><td>Where you type the commands on this sheet.</td></tr>
+<tr><td><strong>Printers</strong></td><td>In Settings. A printer on your network is usually found automatically.</td></tr>
+<tr><td><strong>Document Scanner</strong></td><td>For a scanner or an all-in-one printer.</td></tr>
+</table>
+
+<p>For programming, <strong>Python</strong> and <strong>Node.js</strong> are
+installed and current, along with the tools to build software from source.</p>
+
+<p><strong>The look of the desktop</strong> &mdash; dark theme, icons, fonts
+&mdash; is in <strong>Settings &rarr; Appearance</strong>. Change it freely;
+nothing depends on it.</p>
+
+<p><strong>If you prefer something lighter</strong>, a second desktop called
+<strong>LXDE</strong> is installed. At the login screen, click the small icon
+near your name to pick it. Xfce is the default and there is no need to
+change.</p>
+
+<hr>
+
+<h1>If something goes wrong</h1>
+
+<h2>The screen is black and the fans are LOUD and never quieten</h2>
+
+<p><strong>This is a memory fault, and it has happened before.</strong> Do not reinstall</p>
+<p>anything.</p>
+
+<p>Open the side panel and look for a small <strong>red light labelled <code>T_FAULT</code></strong> on the</p>
+<p>board at the front, below the fan.</p>
+
+<p>If it is lit: switch off, unplug, and **push the memory sticks firmly back into</p>
+<p>their slots** until the clips at both ends click up by themselves. They are on</p>
+<p>two removable trays behind the front grille. This alone has fixed it.</p>
+
+<p>The contacts are twenty years old. This will probably happen again one day, and</p>
+<p>this is the fix.</p>
+
+<h2>The screen goes black but the fans are NORMAL</h2>
+
+<p>Hold Option at power-on and choose the <strong>second</strong> menu line, "repair</p>
+<p>filesystem". If that does not help, choose <strong>Lion</strong> instead — it almost always</p>
+<p>starts — and the machine is still usable while you get help.</p>
+
+<h2>Anything else</h2>
+
+<p>Log in, open a Terminal, and type:</p>
+
+<pre>
+ai check
+</pre>
+
+<p>It tests the network, the AI keys, every service and the disks, and prints a</p>
+<p>numbered list of what to do about anything it finds.</p>
+
+<hr>
+
+<h1>Two things to know about this machine</h1>
+
+<p><strong>It is from 2006, and the graphics are slow.</strong> A browser and a terminal are</p>
+<p>fine. Video is not. The screen is drawn entirely by the processor because this</p>
+<p>graphics card has no modern driver. That is normal here, not a fault.</p>
+
+<p><strong>One of the two hard disks is worn.</strong> The disk holding the old Mac system has</p>
+<p>failed to read data thousands of times over its life. It still works, but</p>
+<p><strong>nothing on it is backed up.</strong> Do not store anything on this machine that does</p>
+<p>not exist somewhere else.</p>
+
+<p><strong>The simplest backup is an external USB drive.</strong> Plug one in, and copy your</p>
+<p>work to it. No accounts, no subscription, no internet needed. A 1 TB drive costs</p>
+<p>about the same as two months of coffee and is the right answer for this machine.</p>
+
+<p>Cloud backup is optional and costs money -- see the full documentation if you</p>
+<p>want it. You do not need it to use this machine safely.</p>
+
+<hr>
+
+<h1>Full documentation</h1>
+
+<p>Everything is on the machine. Open a Terminal and type:</p>
+
+<pre>
+ls /usr/local/share/doc/macpro/kit/
+</pre>
+
+<p>Start with <strong>NEW-OWNER-START-HERE.md</strong>, then <strong>ACCOUNTS-AND-SIGN-IN.md</strong> (which</p>
+<p>account each tool needs), then <strong>FIRST-RUN-CHECKLIST.md</strong>.</p>
+
+<p>If the machine will not start at all, those same files are in the project</p>
+<p>repository under <code>docs/g5-handoff/kit/</code>.</p>
+
+</body></html>

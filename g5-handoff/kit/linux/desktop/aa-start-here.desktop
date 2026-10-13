@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Start Here
+Comment=What to do first on this machine
+Exec=x-www-browser /usr/local/share/ai-welcome/index.html
+Icon=help-about
+Terminal=false
+Categories=Utility;

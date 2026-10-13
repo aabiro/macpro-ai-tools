@@ -1,0 +1,43 @@
+# Two units so the Lion VM and its folder are simply THERE after a boot, with
+# no per-session setup. Install with:
+#   sudo cp lion-vm.service lion-mount.service /etc/systemd/system/
+#   sudo systemctl enable --now lion-vm.service lion-mount.service
+#
+# ---8<--- /etc/systemd/system/lion-vm.service
+[Unit]
+Description=Mac OS X Lion virtual machine
+Documentation=file:///usr/local/share/doc/macpro/kit/LION-VM.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=macpro
+# start returns as soon as qemu is launched; wait blocks until the guest's sshd
+# actually answers, so "systemctl start" finishing means the VM is USABLE.
+ExecStart=/usr/local/bin/lion-vm start
+ExecStart=/usr/local/bin/lion-vm wait
+ExecStop=/usr/local/bin/lion-vm stop
+TimeoutStartSec=600
+TimeoutStopSec=300
+
+[Install]
+WantedBy=multi-user.target
+
+# ---8<--- /etc/systemd/system/lion-mount.service
+[Unit]
+Description=Lion VM filesystem at /mnt/lion-live
+After=lion-vm.service
+Requires=lion-vm.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=macpro
+ExecStart=/usr/local/bin/lion-mount mount
+ExecStop=/usr/local/bin/lion-mount umount
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

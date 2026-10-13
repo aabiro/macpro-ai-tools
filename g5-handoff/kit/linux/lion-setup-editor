@@ -1,0 +1,248 @@
+#!/bin/bash
+# lion-setup-editor -- make VS Code work on Lion code with no per-session setup.
+#
+# After this runs, opening the workspace gives you:
+#   * a folder whose files ARE Lion's files (via /mnt/lion-live)
+#   * a "Lion (root)" terminal profile that drops you inside Mac OS X
+#   * tasks that run the open file in Lion, bound to the normal build key
+#   * AGENTS.md / CLAUDE.md telling an AI assistant to execute with `lion`
+#   * the macpro-lion MCP server already registered, so the assistant can call
+#     lion_exec and friends without being asked to
+#
+# Idempotent. Run it again after changing anything.
+set -u
+
+MOUNT="${LION_MOUNT:-/mnt/lion-live}"
+PROJ_IN_LION="/Users/Shared/lion-demo"
+PROJ="$MOUNT$PROJ_IN_LION"
+VSC="$HOME/.config/Code/User"
+WS="$HOME/Lion-Demo.code-workspace"
+
+fail=0
+ok  () { printf '   ok    %s\n' "$1"; }
+bad () { printf '   FAIL  %s\n' "$1"; fail=$((fail+1)); }
+step () { printf '\n== %s\n' "$1"; }
+
+step "prerequisites"
+command -v code >/dev/null && ok "VS Code present" || bad "VS Code not installed"
+command -v lion >/dev/null && ok "lion present"    || bad "lion not installed"
+if mountpoint -q "$MOUNT"; then ok "Lion mounted at $MOUNT"; else
+    echo "   mounting..."; lion-mount mount >/dev/null 2>&1
+    mountpoint -q "$MOUNT" && ok "Lion mounted at $MOUNT" || bad "could not mount $MOUNT"
+fi
+[ "$fail" -eq 0 ] || { echo; echo "$fail prerequisite(s) missing; stopping."; exit 1; }
+
+step "VS Code user settings"
+mkdir -p "$VSC"
+python3 - "$VSC/settings.json" "$MOUNT" <<'PY'
+import json, os, sys
+path, mount = sys.argv[1], sys.argv[2]
+try:
+    cfg = json.load(open(path))
+except Exception:
+    cfg = {}
+
+# A terminal that IS Lion. Chosen from the terminal's dropdown; the Linux shell
+# stays the default, because most work is still Linux-side.
+profiles = cfg.setdefault("terminal.integrated.profiles.linux", {})
+profiles["bash"] = {"path": "/bin/bash"}
+profiles["Lion (root)"] = {
+    "path": "/usr/local/bin/lion",
+    "icon": "terminal-bash",
+    "overrideName": True,
+}
+cfg["terminal.integrated.defaultProfile.linux"] = "bash"
+
+# The mount is a network filesystem over ssh. Watching it recursively makes the
+# editor crawl and generates constant traffic, so exclude it from watching and
+# from search indexing while still allowing files to be opened and edited.
+for key in ("files.watcherExclude", "search.exclude"):
+    ex = cfg.setdefault(key, {})
+    ex["%s/System/**" % mount] = True
+    ex["%s/Library/**" % mount] = True
+    ex["%s/Applications/**" % mount] = True
+    ex["%s/private/**" % mount] = True
+    ex["%s/usr/**" % mount] = True
+    ex["**/.Spotlight-V100/**"] = True
+    ex["**/.fseventsd/**"] = True
+    ex["**/.Trashes/**"] = True
+
+# Lion's interpreter is Python 2.7 and is not reachable as a local interpreter,
+# so point the language server at the Linux one and stop it guessing.
+cfg["python.defaultInterpreterPath"] = "/usr/bin/python3"
+cfg["python.terminal.activateEnvironment"] = False
+# Lion code is Python 2; do not let the formatter rewrite it on save.
+cfg.setdefault("[python]", {})["editor.formatOnSave"] = False
+
+json.dump(cfg, open(path, "w"), indent=2)
+print("   ok    wrote %s" % path)
+PY
+grep -q "Lion (root)" "$VSC/settings.json" && ok "Lion terminal profile" || bad "Lion terminal profile"
+grep -q "watcherExclude" "$VSC/settings.json" && ok "watcher excludes for the mount" || bad "watcher excludes"
+
+step "project scaffolding, inside Lion"
+mkdir -p "$PROJ/.vscode" 2>/dev/null
+if [ -d "$PROJ/.vscode" ]; then ok "$PROJ_IN_LION/.vscode"; else bad "cannot write into $PROJ"; fi
+
+cat > "$PROJ/.vscode/tasks.json" <<'JSON'
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Lion: run the open file",
+      "type": "shell",
+      "command": "lion-run \"${file}\"",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": [],
+      "detail": "Executes the file you are looking at INSIDE Mac OS X 10.7.5, with its own Python 2.7."
+    },
+    {
+      "label": "Lion: shell",
+      "type": "shell",
+      "command": "lion",
+      "problemMatcher": [],
+      "detail": "Interactive root shell inside Lion."
+    },
+    {
+      "label": "Lion: system report",
+      "type": "shell",
+      "command": "lion 'sw_vers; uptime; df -h /'",
+      "problemMatcher": [],
+      "detail": "What state is Lion in right now."
+    },
+    {
+      "label": "Lion: VM status",
+      "type": "shell",
+      "command": "lion-vm status",
+      "problemMatcher": [],
+      "detail": "Is the VM running, how big is the overlay."
+    }
+  ]
+}
+JSON
+[ -s "$PROJ/.vscode/tasks.json" ] && ok "tasks.json" || bad "tasks.json"
+
+cat > "$PROJ/.vscode/settings.json" <<'JSON'
+{
+  "python.analysis.typeCheckingMode": "off",
+  "python.languageServer": "Pylance",
+  "editor.formatOnSave": false,
+  "files.trimTrailingWhitespace": false,
+  "terminal.integrated.defaultProfile.linux": "Lion (root)"
+}
+JSON
+[ -s "$PROJ/.vscode/settings.json" ] && ok "project settings.json" || bad "project settings.json"
+
+# One file, two names: Claude Code reads CLAUDE.md, several other assistants
+# read AGENTS.md. Keeping them identical avoids one going stale.
+cat > "$PROJ/AGENTS.md" <<'MD'
+# Working in this folder
+
+**These files are inside Mac OS X 10.7.5 Lion, running as a virtual machine.**
+The folder is Lion's own filesystem, reached over SSHFS at `/mnt/lion-live`.
+Editing a file here edits it in Lion immediately. There is no copy or sync step.
+
+## Running things: use `lion`, never the local interpreter
+
+The code here targets **Python 2.7 and BSD userland**. The Linux side has
+Python 3 and GNU userland, so running it locally proves nothing and will fail
+in misleading ways.
+
+```bash
+lion 'cd /Users/Shared/lion-demo && /usr/bin/python report.py'
+lion 'sw_vers'
+lion 'defaults read /Library/Preferences/com.apple.loginwindow'
+```
+
+Note the path difference: `/mnt/lion-live/Users/Shared/lion-demo` from Linux is
+`/Users/Shared/lion-demo` from inside Lion. Strip the `/mnt/lion-live` prefix
+for anything you pass to `lion`.
+
+## What to expect from Lion
+
+| | |
+|---|---|
+| Python | 2.7.1 only. `print` is a statement. No f-strings. |
+| Userland | BSD. `sed -i ''` needs its empty argument; no `--long-options`. |
+| TLS | OpenSSL 0.9.8 cannot do TLS 1.2, so nothing here can call a modern HTTPS API directly. Use the gateway at `http://10.0.2.2:8081`. |
+| Packages | Do not try to install modern packages. `pip` here is ancient and most wheels will not build. |
+
+## MCP tools
+
+The `macpro-lion` MCP server is registered, so these are available without any
+setup: `lion_exec`, `lion_read_file`, `lion_write_file`, `lion_list_dir`,
+`lion_system_report`, `lion_logs`, `lion_list_apps`, `lion_services`,
+`lion_gateway_check`, `lion_vm_status`, `lion_vm_start`, `lion_vm_stop`,
+`lion_vm_screenshot`.
+
+Prefer them over shelling out when you have them: they report failures in plain
+language instead of returning a bare non-zero exit.
+
+## Safety
+
+Writes here land in the VM's copy-on-write overlay. The physical Lion disk is
+the overlay's backing file and QEMU opens it **read-only**, so nothing done
+here can damage the real Lion install. If you break the VM,
+`lion-vm restore` puts it back.
+MD
+cp "$PROJ/AGENTS.md" "$PROJ/CLAUDE.md"
+[ -s "$PROJ/CLAUDE.md" ] && ok "AGENTS.md and CLAUDE.md" || bad "agent instructions"
+
+step "workspace file and shortcuts"
+cat > "$WS" <<JSON
+{
+  "folders": [
+    { "name": "Lion project (runs in Mac OS X)", "path": "$PROJ" },
+    { "name": "Linux home", "path": "$HOME" }
+  ],
+  "settings": {
+    "window.title": "\${rootName} - Lion VM",
+    "terminal.integrated.defaultProfile.linux": "bash"
+  }
+}
+JSON
+[ -s "$WS" ] && ok "$WS" || bad "workspace file"
+
+[ -L "$HOME/Lion" ] || ln -sfn "$MOUNT" "$HOME/Lion"
+[ -L "$HOME/Lion" ] && ok "~/Lion shortcut -> $MOUNT" || bad "~/Lion shortcut"
+
+step "verify the whole path end to end"
+if lion "cd $PROJ_IN_LION && /usr/bin/python report.py" 2>&1 | grep -q "os_version=10.7.5"; then
+    ok "the project's code runs inside Lion"
+else
+    bad "the project's code did not run inside Lion"
+fi
+if [ -f "$PROJ/report.py" ] && grep -q "def os_version" "$PROJ/report.py"; then
+    ok "the same file is readable from Linux"
+else
+    bad "report.py not readable from Linux"
+fi
+
+step "AI assistants (Claude Code + Codex)"
+# The editor loop is wired; the assistants still need a one-time sign-in. This
+# is the user's to do -- we never type a credential -- so this is a reminder,
+# not a gate. There is no fallback: unsigned assistants fail the E2E on purpose.
+if command -v lion-ai-login >/dev/null; then
+    if lion-ai-login --check-both >/dev/null 2>&1; then
+        ok "Claude Code and Codex are signed in"
+    else
+        printf '   note   sign in once (no fallback): run  lion-ai-login\n'
+    fi
+else
+    printf '   note   install lion-ai-login to manage assistant sign-in\n'
+fi
+
+printf '\n'
+if [ "$fail" -eq 0 ]; then
+    echo "Ready. Open it with:"
+    echo "    code $WS"
+    echo
+    echo "Then: Terminal -> new terminal -> 'Lion (root)' to be inside Mac OS X,"
+    echo "or press the build key to run the open file there."
+    echo
+    echo "Sign the assistants in once (required, no fallback):  lion-ai-login"
+    exit 0
+fi
+echo "$fail check(s) FAILED -- see above."
+exit 1

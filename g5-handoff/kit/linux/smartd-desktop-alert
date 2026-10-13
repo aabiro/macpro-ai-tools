@@ -1,0 +1,64 @@
+#!/bin/sh
+# Make a failing disk visible to a human.
+#
+# smartd's shipped handler is 10mail, which mails root. No mail transport is
+# installed on this machine, so before this script existed every SMART warning
+# went precisely nowhere -- on a machine whose second disk has 2,839
+# uncorrectable reads and pending sectors. The alert has to land somewhere the
+# owner will actually see it.
+#
+# smartd passes the message on stdin and sets SMARTD_* in the environment.
+# run-parts runs us as root, so reaching a user's desktop needs their session bus.
+
+MSG=$(cat)
+DEV="${SMARTD_DEVICE:-a disk}"
+STAMP=$(date "+%Y-%m-%d %H:%M")
+
+# 1. The journal, always.
+echo "SMART ALERT on $DEV: $SMARTD_MESSAGE" | systemd-cat -t smart-alert -p err
+
+# 2. A file on the desktop of every human user. This survives being logged out,
+#    and is the part that still works in six months when nobody remembers this.
+for home in /home/*; do
+    [ -d "$home" ] || continue
+    user=$(basename "$home")
+    id "$user" >/dev/null 2>&1 || continue
+    desk="$home/Desktop"
+    [ -d "$desk" ] || desk="$home"
+    cat > "$desk/DISK-WARNING-READ-ME.txt" <<TXT
+DISK WARNING -- $STAMP
+
+The computer's self-monitoring has reported a problem with a hard disk:
+
+    device : $DEV
+    message: ${SMARTD_MESSAGE:-see below}
+
+$MSG
+
+WHAT THIS MEANS
+One of the two hard disks in this machine is wearing out. This was already
+true when the machine was handed over and is documented, but this message
+means it has got measurably worse.
+
+WHAT TO DO
+1. Do not panic, and do not reinstall anything.
+2. Copy anything you care about onto an external drive TODAY.
+   Plug one in and run:   backup-now
+3. Read the full explanation:
+   glow /usr/local/share/doc/macpro/kit/DISK-HEALTH-AND-BACKUP.md
+
+You can delete this file once you have a backup. It will reappear if the
+disk gets worse again.
+TXT
+    chown "$user":"$user" "$desk/DISK-WARNING-READ-ME.txt" 2>/dev/null
+
+    # 3. A pop-up, if that user is logged in right now.
+    pid=$(pgrep -u "$user" -f xfce4-session 2>/dev/null | head -1)
+    [ -n "$pid" ] || continue
+    bus=$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p')
+    [ -n "$bus" ] || continue
+    su - "$user" -c "DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS='$bus' \
+        notify-send -u critical -t 0 -i drive-harddisk \
+        'Hard disk warning' 'A disk is reporting errors. See DISK-WARNING-READ-ME.txt on your desktop.'" >/dev/null 2>&1
+done
+exit 0

@@ -1,0 +1,62 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/home/macpro/projects"
+      ],
+      "trust": true
+    },
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ],
+      "trust": true
+    },
+    "git": {
+      "command": "/home/macpro/.local/bin/mcp-server-git",
+      "args": [],
+      "trust": true
+    },
+    "fetch": {
+      "command": "/home/macpro/.local/bin/mcp-server-fetch",
+      "args": [],
+      "trust": true
+    },
+    "time": {
+      "command": "/home/macpro/.local/bin/mcp-server-time",
+      "args": [],
+      "trust": true
+    },
+    "macpro-health": {
+      "command": "/usr/local/bin/macpro-mcp",
+      "args": [
+        "health"
+      ],
+      "trust": true
+    },
+    "macpro-journal": {
+      "command": "/usr/local/bin/macpro-mcp",
+      "args": [
+        "journal"
+      ],
+      "trust": true
+    },
+    "macpro-apt": {
+      "command": "/usr/local/bin/macpro-mcp",
+      "args": [
+        "apt"
+      ],
+      "trust": true
+    }
+  },
+  "security": {
+    "folderTrust": {
+      "enabled": false
+    }
+  }
+}

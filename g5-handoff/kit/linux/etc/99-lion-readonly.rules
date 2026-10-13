@@ -1,0 +1,3 @@
+# Never let the desktop auto-mount the worn Lion volume read-write.
+# See /etc/fstab and DISK-HEALTH-AND-BACKUP.md.
+ENV{ID_FS_UUID}=="ab591134-a1ee-3898-93b7-b4becbf269b0", ENV{UDISKS_IGNORE}="1"

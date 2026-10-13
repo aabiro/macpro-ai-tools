@@ -1,0 +1,165 @@
+#!/bin/bash
+# lion-vm -- run the Mac OS X Lion install as a VM, alongside the running Linux.
+#
+# WHY THIS EXISTS
+#   Lion lives on the second internal disk. Rebooting into it means losing
+#   Linux, and that disk is failing (255 reallocated sectors, 4 pending), so the
+#   fewer times it spins up the better. This boots it as a guest instead.
+#
+# THE DISK IS PROTECTED, BY DESIGN
+#   /dev/sdb is the qcow2's BACKING file and QEMU opens it READ-ONLY. Every
+#   write the guest makes -- including fsck repairs and journal replay -- lands
+#   in the overlay at $OVERLAY. Nothing the VM does can reach the real disk.
+#   "lion-vm reset" throws the overlay away and starts from the disk again.
+#
+# HOW IT BOOTS (five things had to line up; do not "simplify" them)
+#   1. OpenCore, from its own small FAT image, because Apple's boot.efi is an
+#      Apple "fat" container that plain UEFI LoadImage cannot start.
+#   2. boot.efi is launched FROM THE HFS+ VOLUME. It resolves mach_kernel and
+#      the kext cache relative to whatever volume it came from, so launching a
+#      copy off the ESP fails with "Could not open file 'mach_kernel'".
+#   3. Booter/Quirks/AllowRelocationBlock=true. Without it the kernel load dies
+#      with "Error allocating 0xe2 pages at 0x800000 alloc type 2" -- the
+#      firmware already owns the address the kernel wants.
+#   4. Boot args go in NVRAM, not in the OpenCore entry's Arguments. -x is
+#      honoured either way but -s is ignored unless it comes from NVRAM.
+#   5. -smp 1. Also -device isa-applesmc, or macOS refuses to boot at all.
+#
+set -u
+OC_DIR="${OC_DIR:-$HOME/oc}"
+OVERLAY="${OVERLAY:-/var/lib/lion-vm/lion-overlay.qcow2}"
+MON=/tmp/lion-monitor
+KEY="$HOME/.ssh/lion_vm_key"
+
+# Lion runs OpenSSH 5.x: RSA-SHA1 host keys and no ed25519. A modern client
+# refuses those unless asked, which looks exactly like "sshd is not running".
+SSH_LEGACY=(-o HostKeyAlgorithms=+ssh-rsa
+            -o PubkeyAcceptedAlgorithms=+ssh-rsa
+            -o PubkeyAcceptedKeyTypes=+ssh-rsa)
+
+pids () { ps -eo pid,args | awk '/qemu-system-x86_64/ && /-name lion/ && !/awk/ {print $1}'; }
+
+# Wait for the process to actually leave the table. Without this, a "stop"
+# immediately followed by "snapshot" or "start" trips over the dying process.
+reap () {
+    for _ in $(seq 1 20); do [ -z "$(pids)" ] && return 0; sleep 1; done
+    for p in $(pids); do kill -9 "$p" 2>/dev/null; done
+    sleep 2
+}
+
+case "${1:-help}" in
+  start)
+    if [ -n "$(pids)" ]; then echo "already running (pid $(pids | tr '\n' ' '))"; exit 0; fi
+    ARGS="-v"
+    [ "${2:-}" = "--safe" ]   && ARGS="-v -x"      # safe boot: the only mode that draws a GUI
+    [ "${2:-}" = "--single" ] && ARGS="-s -v"      # passwordless root shell on the console
+    python3 "$OC_DIR/nvram.py" "$ARGS" >/dev/null || exit 1
+    "$OC_DIR/rebuild.sh" >/dev/null 2>&1
+    rm -f "$OC_DIR/serial.log"
+    SMP=1 setsid nohup "$OC_DIR/run-lion.sh" > "$OC_DIR/qemu.log" 2>&1 < /dev/null &
+    echo "starting Lion (boot-args: $ARGS)"
+    echo "  ready for ssh in about 3 minutes; 'lion-vm wait' blocks until then"
+    ;;
+  wait)
+    for i in $(seq 1 40); do
+      if ssh -i "$KEY" -p 2222 "${SSH_LEGACY[@]}" -o BatchMode=yes \
+             -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+             -o ConnectTimeout=8 root@127.0.0.1 true 2>/dev/null; then
+        echo "up after ${i}0s"; exit 0
+      fi
+      sleep 10
+    done
+    echo "did not come up within 400s -- check 'lion-vm screenshot'"; exit 1
+    ;;
+  stop)
+    [ -z "$(pids)" ] && { echo "not running"; exit 0; }
+    # Shut down from INSIDE, over ssh. In a normal boot the guest renders
+    # nothing, so an ACPI power-button press can sit on an invisible dialog
+    # forever; "shutdown -h now" cannot. A clean stop leaves the HFS+ journal
+    # empty, which matters because a dirty journal is replayed on next boot.
+    if lion "shutdown -h now" >/dev/null 2>&1; then
+      echo "asked Lion to shut down"
+    else
+      echo "ssh unavailable, pressing the virtual power button instead"
+      python3 - <<'PY' 2>/dev/null
+import socket
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.settimeout(8)
+s.connect("/tmp/lion-monitor"); s.sendall(b"system_powerdown\n")
+PY
+    fi
+    # Lion halts the CPU rather than driving ACPI S5, so QEMU keeps running
+    # with a stopped guest and never exits on its own. The signal that the
+    # OS is actually down is that its sshd stops answering.
+    for i in $(seq 1 24); do
+      [ -z "$(pids)" ] && { echo "shut down cleanly"; exit 0; }
+      if ! lion true >/dev/null 2>&1; then
+        sleep 10                      # let the last writes flush
+        echo "Lion is down; stopping qemu"
+        for p in $(pids); do kill "$p"; done
+        reap
+        exit 0
+      fi
+      sleep 5
+    done
+    echo "Lion still answering after 2 min -- stopping qemu anyway" >&2
+    for p in $(pids); do kill "$p"; done
+    reap
+    ;;
+  snapshot)
+    # The ssh access lives in the overlay, not on the real disk, so "reset"
+    # throws it away. Keep a copy of the working overlay to fall back to.
+    [ -n "$(pids)" ] && { echo "stop the VM first" >&2; exit 1; }
+    sudo cp --sparse=always "$OVERLAY" "$OVERLAY.provisioned" && \
+      echo "saved $(du -h --apparent-size "$OVERLAY.provisioned" | cut -f1)"
+    ;;
+  restore)
+    [ -n "$(pids)" ] && { echo "stop the VM first" >&2; exit 1; }
+    [ -f "$OVERLAY.provisioned" ] || { echo "no snapshot to restore" >&2; exit 1; }
+    sudo cp --sparse=always "$OVERLAY.provisioned" "$OVERLAY" && echo "overlay restored"
+    ;;
+  status)
+    if [ -n "$(pids)" ]; then echo "running (pid $(pids | tr '\n' ' '))"; else echo "stopped"; fi
+    echo "overlay: $(du -h --apparent-size "$OVERLAY" 2>/dev/null | cut -f1) at $OVERLAY"
+    echo "backing: /dev/sdb (read-only -- the VM cannot write it)"
+    tail -3 "$OC_DIR/serial.log" 2>/dev/null | tr -d '\000' | sed 's/^/  serial: /'
+    ;;
+  screenshot)
+    OUT="${2:-/tmp/lion-screen.png}"
+    python3 "$OC_DIR/mon.py" "screendump /tmp/lion-screen.ppm" >/dev/null 2>&1
+    sleep 2
+    python3 - "$OUT" <<'PY'
+import sys
+from PIL import Image
+im = Image.open("/tmp/lion-screen.ppm").convert("RGB")
+im.save(sys.argv[1])
+g = im.convert("L"); px = list(g.getdata())
+lit = 100.0*sum(1 for p in px if p > 24)/len(px)
+print("%s  %dx%d  lit=%.2f%%" % (sys.argv[1], im.size[0], im.size[1], lit))
+PY
+    ;;
+  reset)
+    [ -n "$(pids)" ] && { echo "stop the VM first"; exit 1; }
+    echo "This discards every change the VM has made. The real disk is unaffected."
+    read -r -p "type RESET to confirm: " a
+    [ "$a" = "RESET" ] || { echo "cancelled"; exit 1; }
+    sudo qemu-img create -f qcow2 -b /dev/sdb -F raw "$OVERLAY" >/dev/null && echo "overlay recreated"
+    ;;
+  *)
+    cat <<'USAGE'
+lion-vm start            boot Lion headless -- use this one; ssh works, screen stays black
+lion-vm start --safe     boot to a usable graphical login (VNC on 127.0.0.1:5901)
+lion-vm start --single   boot to a root shell on the console, no password
+lion-vm wait             block until ssh answers
+lion-vm stop             clean ACPI shutdown, falls back to kill
+lion-vm status           running? overlay size? last serial lines?
+lion-vm screenshot [f]   grab the guest screen as a PNG
+lion-vm snapshot         save the current overlay (this is what keeps ssh working)
+lion-vm restore          put the saved overlay back
+lion-vm reset            throw away ALL VM changes and start again from the disk.
+                         This also removes the ssh access, which lives only in
+                         the overlay -- 'restore' is nearly always what you want.
+
+Run commands inside Lion with:   lion <command>
+USAGE
+    ;;
+esac

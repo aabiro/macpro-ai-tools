@@ -1,0 +1,33 @@
+# MCP servers, matching claude/gemini/VS Code on this machine.
+
+[mcp_servers.filesystem]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/home/macpro/projects"]
+
+[mcp_servers.memory]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-memory"]
+
+[mcp_servers.git]
+command = "/home/macpro/.local/bin/mcp-server-git"
+args = []
+
+[mcp_servers.fetch]
+command = "/home/macpro/.local/bin/mcp-server-fetch"
+args = []
+
+[mcp_servers.time]
+command = "/home/macpro/.local/bin/mcp-server-time"
+args = []
+
+[mcp_servers.macpro_health]
+command = "/usr/local/bin/macpro-mcp"
+args = ["health"]
+
+[mcp_servers.macpro_journal]
+command = "/usr/local/bin/macpro-mcp"
+args = ["journal"]
+
+[mcp_servers.macpro_apt]
+command = "/usr/local/bin/macpro-mcp"
+args = ["apt"]

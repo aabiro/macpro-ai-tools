@@ -1,0 +1,32 @@
+[Unit]
+Description=AI gateway (aigw.py) - TLS bridge so Lion can reach modern model APIs
+Documentation=file:///usr/local/share/doc/macpro/kit/gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aigw
+Group=aigw
+EnvironmentFile=/etc/ai-cockpit/env
+ExecStart=/usr/bin/python3 /opt/ai-cockpit/aigw.py --host 0.0.0.0 --port 8081
+Restart=always
+RestartSec=3
+
+# This process only needs to read one script and talk to the network.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,49 @@
+#!/bin/bash
+# lion -- run a command inside the Lion VM as root, from Linux.
+#
+#   lion sw_vers
+#   lion 'defaults read /Library/Preferences/com.apple.loginwindow'
+#   lion g5-config show          # works because this script supplies PATH
+#   lion                         # interactive shell
+#
+# The key was generated on this machine and stays on it. No password exists on
+# this path: sshd in the guest is key-only (PasswordAuthentication no).
+#
+# WHY THE PATH LINE BELOW EXISTS
+#   `ssh host cmd` runs a NON-interactive shell, which reads neither
+#   ~/.bash_profile nor ~/.profile. Lion's sshd hands out a fixed
+#   /usr/bin:/bin:/usr/sbin:/sbin, and /usr/local/bin does not exist there at
+#   all. So the cockpit commands would be invisible over ssh even though they
+#   are installed. Prepending PATH here fixes that for every caller without
+#   putting anything of ours into Apple's /usr/bin.
+#
+# WHY THE LEGACY ALGORITHM FLAGS ARE NOT OPTIONAL
+#   Lion ships OpenSSH 5.x, whose RSA-SHA1 host keys a modern client rejects by
+#   default. Without them the failure reads "no matching host key type found",
+#   which looks like a dead sshd rather than a negotiation mismatch.
+set -u
+KEY="$HOME/.ssh/lion_vm_key"
+[ -f "$KEY" ] || { echo "no VM key at $KEY" >&2; exit 1; }
+
+GUEST_PATH='/Users/Shared/ai-cockpit/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'
+
+SSH_ARGS=(
+  -i "$KEY" -p 2222
+  -o HostKeyAlgorithms=+ssh-rsa
+  -o PubkeyAcceptedAlgorithms=+ssh-rsa
+  -o PubkeyAcceptedKeyTypes=+ssh-rsa
+  -o StrictHostKeyChecking=no
+  -o UserKnownHostsFile=/dev/null
+  -o LogLevel=ERROR
+  -o ConnectTimeout=15
+)
+
+if [ "$#" -eq 0 ]; then
+  # Interactive: the login shell reads /var/root/.profile, which lion-provision
+  # writes, so PATH is already right. Do not inject anything here.
+  exec ssh "${SSH_ARGS[@]}" root@127.0.0.1
+fi
+
+# ssh joins its arguments with spaces and the remote shell parses the result,
+# so a leading assignment is enough -- no extra quoting layer is introduced.
+exec ssh "${SSH_ARGS[@]}" root@127.0.0.1 "export PATH=$GUEST_PATH; $*"

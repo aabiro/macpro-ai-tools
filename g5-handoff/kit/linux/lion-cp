@@ -1,0 +1,29 @@
+#!/bin/bash
+# lion-cp -- copy files between Linux and the Lion VM.
+#
+#   lion-cp ./script.py   lion:/Users/Shared/     # into the VM
+#   lion-cp lion:/var/log/system.log  ./          # out of the VM
+#
+# Paths beginning "lion:" refer to the guest. Same legacy-algorithm reason as
+# the `lion` wrapper: Lion's OpenSSH 5.x needs RSA-SHA1 explicitly allowed.
+set -u
+KEY="$HOME/.ssh/lion_vm_key"
+[ -f "$KEY" ] || { echo "no VM key at $KEY" >&2; exit 1; }
+[ "$#" -ge 2 ] || { echo "usage: lion-cp SRC... DEST   (prefix guest paths with lion:)" >&2; exit 1; }
+
+args=()
+for a in "$@"; do
+  case "$a" in
+    lion:*) args+=( "root@127.0.0.1:${a#lion:}" ) ;;
+    *)      args+=( "$a" ) ;;
+  esac
+done
+
+exec scp -P 2222 -i "$KEY" \
+  -o HostKeyAlgorithms=+ssh-rsa \
+  -o PubkeyAcceptedAlgorithms=+ssh-rsa \
+  -o PubkeyAcceptedKeyTypes=+ssh-rsa \
+  -o StrictHostKeyChecking=no \
+  -o UserKnownHostsFile=/dev/null \
+  -o LogLevel=ERROR \
+  -r "${args[@]}"

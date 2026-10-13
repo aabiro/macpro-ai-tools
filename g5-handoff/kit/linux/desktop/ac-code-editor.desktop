@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Code Editor
+Comment=Full code editor in the browser
+Exec=x-www-browser http://127.0.0.1:8443
+Icon=applications-development
+Terminal=false
+Categories=Utility;

@@ -1,0 +1,8 @@
+[Unit]
+Description=Refresh hardware telemetry every 5 minutes
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=5min
+AccuracySec=30s
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Disable screen blanking
+Comment=A blank screen on this machine looks identical to its known hardware fault
+Exec=bash -c 'xset -dpms s off s noblank'
+Terminal=false
+X-GNOME-Autostart-enabled=true

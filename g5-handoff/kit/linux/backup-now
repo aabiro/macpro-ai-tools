@@ -1,0 +1,318 @@
+#!/usr/bin/env python3
+"""backup-now -- copy this machine's files to an external drive.
+
+Written for someone who has never used a terminal. It explains what it is about
+to do, does it, and then says plainly whether it worked.
+
+    backup-now              find a drive, confirm, copy
+    backup-now --auto       for the timer: silent unless there is something to say
+    backup-now --status     when the last backup ran and how it went
+
+Two rules shape the whole design:
+
+1. It will only ever write to a USB drive. The check is `ID_BUS=usb` from udev,
+   not a guess from the device letter -- on this machine sda and sdb swap
+   between boots, so "/dev/sdb must be the external one" is how you overwrite
+   somebody's only copy of their files. The internal disks are never candidates.
+
+2. It never deletes. No --delete, ever. A backup that mirrors deletions will
+   happily erase a file you removed by accident, which is the opposite of what
+   the word means to the person running it. Old files accumulate; disks are
+   cheaper than regret.
+"""
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+STATE = "/var/lib/macpro-backup/last-run.json"
+LOGDIR = "/var/log/macpro-backup"
+PREFERRED_LABEL = "MACPRO-BACKUP"
+
+G = "\033[32m"
+Y = "\033[33m"
+R = "\033[31m"
+B = "\033[1m"
+X = "\033[0m"
+
+
+def plain():
+    return not sys.stdout.isatty() or "--no-colour" in sys.argv
+
+
+def say(msg=""):
+    print(msg if not plain() else re.sub(r"\033\[[0-9;]*m", "", msg))
+
+
+def ok(m):
+    say("  %s+%s %s" % (G, X, m))
+
+
+def warn(m):
+    say("  %s!%s %s" % (Y, X, m))
+
+
+def bad(m):
+    say("  %sx%s %s" % (R, X, m))
+
+
+def title(m):
+    say()
+    say("%s%s%s" % (B, m, X))
+    say("-" * len(m))
+
+
+def run(cmd, timeout=None):
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, p.stdout, p.stderr
+    except Exception as exc:
+        return 1, "", str(exc)
+
+
+# --------------------------------------------------------------------------
+def is_usb(dev):
+    """True only if udev says this block device sits on the USB bus.
+
+    This is the safety interlock. Never relax it to a device-letter test.
+    """
+    rc, out, _ = run(["udevadm", "info", "--query=property", "--name=" + dev])
+    if rc != 0:
+        return False
+    props = dict(
+        line.split("=", 1) for line in out.splitlines() if "=" in line
+    )
+    return props.get("ID_BUS") == "usb"
+
+
+def candidates():
+    """Every mountable partition on a USB disk, with label and size."""
+    rc, out, _ = run(["lsblk", "-J", "-o",
+                      "NAME,PATH,SIZE,FSTYPE,LABEL,MOUNTPOINT,TYPE"])
+    if rc != 0:
+        return []
+    try:
+        tree = json.loads(out)
+    except ValueError:
+        return []
+
+    found = []
+
+    def walk(nodes, parent_path=None):
+        for n in nodes:
+            path = n.get("path")
+            if n.get("type") == "part" and n.get("fstype"):
+                disk = parent_path or path
+                if is_usb(disk):
+                    found.append({
+                        "path": path,
+                        "size": n.get("size"),
+                        "fstype": n.get("fstype"),
+                        "label": n.get("label") or "",
+                        "mount": n.get("mountpoint") or "",
+                    })
+            walk(n.get("children") or [], parent_path or path)
+
+    walk(tree.get("blockdevices") or [])
+    return found
+
+
+def ensure_mounted(part):
+    """Mount the chosen partition if it is not already, returning its path."""
+    if part["mount"]:
+        return part["mount"]
+    target = "/media/backup"
+    os.makedirs(target, exist_ok=True)
+    rc, _, err = run(["mount", part["path"], target], timeout=60)
+    if rc != 0:
+        bad("could not mount %s: %s" % (part["path"], err.strip()[:120]))
+        return None
+    return target
+
+
+def load_state():
+    try:
+        with open(STATE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_state(d):
+    try:
+        os.makedirs(os.path.dirname(STATE), exist_ok=True)
+        tmp = STATE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(d, f, indent=2)
+        os.replace(tmp, STATE)
+    except Exception as exc:
+        warn("could not record the result: %s" % exc)
+
+
+# --------------------------------------------------------------------------
+def do_copy(dest_root, auto=False):
+    """rsync the things worth keeping. Returns (ok, summary)."""
+    os.makedirs(LOGDIR, exist_ok=True)
+    stamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+    log = os.path.join(LOGDIR, "backup-%s.log" % stamp)
+    dest = os.path.join(dest_root, "macpro-backup")
+    os.makedirs(dest, exist_ok=True)
+
+    # Per-source exclusions, because rsync anchors a leading "/" to the
+    # TRANSFER root, not the filesystem root. With /etc/ as the source,
+    # "--exclude=/etc/shadow" looks for /etc/etc/shadow and silently matches
+    # nothing -- which is how the password hashes ended up on the backup drive
+    # the first time this was tested. Anchor relative to the source instead.
+    sources = [("/home/", ["/*/.cache/", "/*/.local/share/Trash/",
+                           "/*/node_modules/", "/*/.npm/", "/*/.venv/",
+                           "**/node_modules/", "**/.cache/"])]
+    # /etc is small and is what makes a rebuild possible rather than a guess --
+    # minus the files that would put every account's password hash on a USB
+    # drive somebody could lose.
+    if os.path.isdir("/etc"):
+        sources.append(("/etc/", ["/shadow", "/shadow-", "/shadow.*",
+                                  "/gshadow", "/gshadow-", "/gshadow.*",
+                                  "/ssh/ssh_host_*_key", "/ai-cockpit/env",
+                                  "/sudoers.d/", "/credstore*/"]))
+
+    total_failed = 0
+    for src, excludes in sources:
+        sub = os.path.join(dest, src.strip("/").replace("/", "_"))
+        os.makedirs(sub, exist_ok=True)
+        cmd = [
+            "rsync", "-a",
+            "--partial", "--append-verify",   # resumable across interruptions
+            "--ignore-errors",                # a bad sector must not abort it
+            "--human-readable",
+            "--log-file=" + log,
+        ] + ["--exclude=" + e for e in excludes]
+        if not auto:
+            cmd.append("--info=progress2")
+        cmd += [src, sub + "/"]
+
+        rc, out, err = run(cmd, timeout=60 * 60 * 8)
+        # rsync 23/24 mean "some files could not be transferred" -- expected on
+        # a disk with bad sectors, and not a reason to call the run a failure.
+        if rc not in (0, 23, 24):
+            return False, "rsync failed on %s (code %d): %s" % (
+                src, rc, err.strip()[:200])
+        if rc in (23, 24):
+            total_failed += 1
+
+    return True, ("copied, with unreadable files skipped (see %s)" % log
+                  if total_failed else "copied cleanly")
+
+
+def cmd_status():
+    title("Last backup")
+    st = load_state()
+    if not st:
+        bad("no backup has ever run on this machine")
+        say()
+        say("  Plug in a USB drive and run:  backup-now")
+        return 1
+    when = st.get("finished_iso", "unknown")
+    age_days = (time.time() - st.get("finished", 0)) / 86400.0
+    (ok if st.get("ok") else bad)("%s  (%s)" % (when, st.get("summary", "")))
+    say("      drive: %s" % st.get("target", "?"))
+    if age_days > 30:
+        warn("that was %d days ago -- worth doing another one" % age_days)
+    return 0 if st.get("ok") else 1
+
+
+def main():
+    auto = "--auto" in sys.argv
+    if "--status" in sys.argv:
+        return cmd_status()
+    if os.geteuid() != 0:
+        bad("this needs to run with sudo:   sudo backup-now")
+        return 1
+
+    if not auto:
+        title("Backing up this machine")
+        say("  This copies your files to a USB drive.")
+        say("  It never deletes anything, and it never writes to the internal disks.")
+
+    parts = candidates()
+    if not parts:
+        if auto:
+            return 0          # nothing plugged in; say nothing, this is normal
+        bad("no USB drive found.")
+        say()
+        say("  Plug one in, wait a few seconds, and run this again.")
+        say("  A drive labelled %s is picked automatically." % PREFERRED_LABEL)
+        return 1
+
+    chosen = next((p for p in parts if p["label"] == PREFERRED_LABEL), None)
+    if chosen is None:
+        if auto:
+            # Unlabelled drive in automatic mode: do nothing. Guessing which
+            # random USB stick is the backup target is not a decision to make
+            # without a person.
+            return 0
+        if len(parts) == 1:
+            chosen = parts[0]
+        else:
+            say()
+            say("  Which drive should I copy to?")
+            for i, p in enumerate(parts, 1):
+                say("    %d) %s  %s  %s %s" % (
+                    i, p["path"], p["size"], p["fstype"],
+                    ("[%s]" % p["label"]) if p["label"] else ""))
+            try:
+                pick = int(input("\n  Number (or Ctrl-C to stop): ").strip())
+                chosen = parts[pick - 1]
+            except (ValueError, IndexError, KeyboardInterrupt, EOFError):
+                say()
+                bad("nothing chosen, nothing done.")
+                return 1
+
+    mount = ensure_mounted(chosen)
+    if not mount:
+        return 1
+
+    free = shutil.disk_usage(mount).free
+    if not auto:
+        ok("using %s (%s free) at %s" % (chosen["path"],
+                                         "%.0f GB" % (free / 1e9), mount))
+        title("Copying")
+        say("  This can take a long time the first time. Later runs only copy")
+        say("  what changed, so they are much quicker. Ctrl-C is safe -- it")
+        say("  resumes where it stopped.")
+        say()
+
+    started = time.time()
+    good, summary = do_copy(mount, auto=auto)
+    save_state({
+        "ok": good,
+        "summary": summary,
+        "target": "%s at %s" % (chosen["path"], mount),
+        "finished": time.time(),
+        "finished_iso": time.strftime("%Y-%m-%d %H:%M"),
+        "seconds": int(time.time() - started),
+    })
+
+    if not auto:
+        title("Result")
+    if good:
+        if not auto:
+            ok(summary)
+            say()
+            say("  Your files are at:  %s/macpro-backup/" % mount)
+            say("  It is safe to unplug the drive now.")
+        return 0
+    bad(summary)
+    return 1
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        say()
+        warn("stopped. Nothing was damaged; run it again to resume.")
+        sys.exit(1)

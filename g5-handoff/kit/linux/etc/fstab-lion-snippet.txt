@@ -1,0 +1,3 @@
+# Mac OS X Lion volume. READ-ONLY ON PURPOSE.
+# This disk has 2,814 recorded uncorrectable reads and its HFS+ journal is dirty,
+# and it holds the only copy of ~200GB of the previous owner's files. Mounting it

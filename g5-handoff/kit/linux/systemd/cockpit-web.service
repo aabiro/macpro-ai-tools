@@ -1,0 +1,32 @@
+[Unit]
+Description=AI Cockpit web console (Next.js) - same contract as aigw.py
+Documentation=file:///usr/local/share/doc/macpro/kit/cockpit-web/README.md
+After=network-online.target ai-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cockpit
+Group=cockpit
+WorkingDirectory=/opt/cockpit-web
+Environment=NODE_ENV=production
+Environment=NEXT_TELEMETRY_DISABLED=1
+Environment=HOME=/opt/cockpit-web
+EnvironmentFile=/etc/ai-cockpit/env
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=3
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/cockpit-web
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

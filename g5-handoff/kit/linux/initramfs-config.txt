@@ -1,0 +1,8 @@
+MODULES=dep
+COMPRESS=zstd
+--- forced modules:
+ahci
+ata_piix
+libata
+sd_mod
+ext4

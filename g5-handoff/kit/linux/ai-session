@@ -1,0 +1,5 @@
+#!/bin/bash
+# Persistent agent workspace: survives SSH disconnects and reboots of your
+# laptop. `ai-session` attaches or creates; detach with ctrl-b d.
+NAME="${1:-ai}"
+exec tmux new-session -A -s "$NAME"

@@ -1,0 +1,57 @@
+{
+  "servers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/home/macpro/projects"
+      ]
+    },
+    "memory": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ]
+    },
+    "git": {
+      "type": "stdio",
+      "command": "/home/macpro/.local/bin/mcp-server-git",
+      "args": []
+    },
+    "fetch": {
+      "type": "stdio",
+      "command": "/home/macpro/.local/bin/mcp-server-fetch",
+      "args": []
+    },
+    "time": {
+      "type": "stdio",
+      "command": "/home/macpro/.local/bin/mcp-server-time",
+      "args": []
+    },
+    "macpro-health": {
+      "type": "stdio",
+      "command": "/usr/local/bin/macpro-mcp",
+      "args": [
+        "health"
+      ]
+    },
+    "macpro-journal": {
+      "type": "stdio",
+      "command": "/usr/local/bin/macpro-mcp",
+      "args": [
+        "journal"
+      ]
+    },
+    "macpro-apt": {
+      "type": "stdio",
+      "command": "/usr/local/bin/macpro-mcp",
+      "args": [
+        "apt"
+      ]
+    }
+  }
+}

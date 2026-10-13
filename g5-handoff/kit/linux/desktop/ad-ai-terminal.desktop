@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=AI Terminal
+Comment=Talk to an AI in a terminal window
+Exec=xfce4-terminal --title="AI" --command="bash -lc 'ai; exec bash'"
+Icon=utilities-terminal
+Terminal=false
+Categories=Utility;
