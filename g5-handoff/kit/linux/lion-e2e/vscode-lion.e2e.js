@@ -51,11 +51,25 @@ function check(label, condition, detail) {
   }
 }
 
+/**
+ * Environment for a child process: everything except credentials, plus the
+ * named ones it actually needs. Inheriting process.env whole would hand the
+ * OpenAI key to Claude Code, the Anthropic key to Codex, and both to `lion`.
+ */
+const SECRET_ENV = /(_API_KEY|_TOKEN|_SECRET|PASSWORD)$/i;
+function childEnv(secrets, extra) {
+  const env = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!SECRET_ENV.test(k) || (secrets || []).includes(k)) env[k] = v;
+  }
+  return Object.assign(env, extra || {});
+}
+
 /** Run a command inside Lion. Throws only on spawn failure, not on exit code. */
 function inLion(cmd) {
   try {
     return execFileSync('/usr/local/bin/lion', [cmd],
-      { encoding: 'utf8', timeout: 120000 }).trim();
+      { encoding: 'utf8', timeout: 120000, env: childEnv() }).trim();
   } catch (e) {
     return ((e.stdout || '') + (e.stderr || '')).trim() || ('ERROR: ' + e.message);
   }
@@ -135,6 +149,7 @@ function codexSignedIn() {
 const AI_ASSISTANTS = [
   { name: 'Claude Code', bin: '/usr/local/bin/claude',
     argv: ['-p', AI_PROMPT, '--permission-mode', 'acceptEdits'],
+    secrets: ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'],
     signedIn: claudeSignedIn,
     unauth: /invalid api key|please run \/login|not authenticated|credit balance|unauthorized/i,
     how: 'lion-ai-login          # then:  claude   ->  /login' },
@@ -146,6 +161,7 @@ const AI_ASSISTANTS = [
     //   time out and add minutes to every run for no benefit here.
     // --full-auto sandboxes the run; the edit itself is a local file write.
     argv: ['exec', '--full-auto', '--skip-git-repo-check', '-c', 'mcp_servers={}', AI_PROMPT],
+    secrets: ['OPENAI_API_KEY'],
     signedIn: codexSignedIn,
     unauth: /not (logged in|authenticated)|missing api key|unauthorized|401|sign in|OPENAI_API_KEY/i,
     how: 'export OPENAI_API_KEY=sk-...   (ephemeral; codex exec needs it in the env)' },
@@ -169,7 +185,7 @@ function runAiEdit(spec) {
   try {
     out = execFileSync(spec.bin, spec.argv, {
       cwd: PROJ_LINUX, encoding: 'utf8', timeout: 300000,
-      env: Object.assign({}, process.env, { CI: '1' }),
+      env: childEnv(spec.secrets, { CI: '1' }),
     });
   } catch (e) {
     out = ((e.stdout || '') + (e.stderr || '')).toString();
@@ -190,7 +206,7 @@ function runAiEdit(spec) {
 
   const output = execFileSync('/usr/local/bin/lion',
     ['cd ' + PROJ_LION + ' && /usr/bin/python ' + FILE],
-    { encoding: 'utf8', timeout: 120000 }).toString();
+    { encoding: 'utf8', timeout: 120000, env: childEnv() }).toString();
   return { ok: true, tool: spec.name, output: output,
            detail: 'the file grew by ' + (after.length - before.length) + ' bytes' };
 }
@@ -229,7 +245,7 @@ async function shot(win, name) {
       // exclude it too.
       others = parseInt(execFileSync('bash', ['-lc',
         'pgrep -af "/usr/share/[c]ode/code" | grep -v "lion-e2e/[u]data" | grep -v "serve-web" | grep -c . || true'],
-        { encoding: 'utf8' }).trim(), 10) || 0;
+        { encoding: 'utf8', env: childEnv() }).trim(), 10) || 0;
     } catch (e) { /* pgrep absent: skip the guard rather than block */ }
     check('the desktop is free (no other VS Code open on this GPU-less display)',
       others === 0,

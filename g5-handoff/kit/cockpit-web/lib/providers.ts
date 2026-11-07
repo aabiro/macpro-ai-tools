@@ -129,6 +129,13 @@ export const PROVIDERS: Record<ProviderName, ProviderSpec> = {
   },
 };
 
+/**
+ * The model name is the one caller-supplied part of an upstream URL. Only allow
+ * the characters real model IDs use, so a key can only ever be sent to a model
+ * path on its own provider's host.
+ */
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+
 export function apiKeyFor(provider: ProviderName): string | null {
   const key = process.env[PROVIDERS[provider].envKey]?.trim();
   return key ? key : null;
@@ -164,6 +171,9 @@ export async function callProvider(
   }
 
   const model = req.model?.trim() || spec.defaultModel;
+  if (!MODEL_ID.test(model)) {
+    throw new ProviderError(`invalid model name: ${JSON.stringify(model)}`, 400);
+  }
   const payload = spec.buildPayload({ ...req, prompt: req.prompt }, model);
 
   let response: Response;

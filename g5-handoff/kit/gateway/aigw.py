@@ -49,6 +49,7 @@ import argparse
 import ipaddress
 import json
 import os
+import re
 import socket
 import ssl
 import sys
@@ -99,6 +100,12 @@ PROVIDERS = {
         },
     },
 }
+
+
+# The model name is the one caller-supplied part of an upstream URL. Only allow
+# the characters real model IDs use, so a key can only ever be sent to a model
+# path on its own provider's host.
+MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
 
 
 def api_key_for(provider):
@@ -206,6 +213,8 @@ def call_provider(provider, payload, model, timeout=120):
             % (provider, spec["env"])
         )
 
+    if not MODEL_ID.fullmatch(model or ""):
+        raise ValueError("invalid model name: %r" % (model,))
     url = spec["url"].format(model=model)
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=spec["headers"](key), method="POST")
@@ -351,6 +360,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
             )
         except RuntimeError as exc:
             self._send(503, {"error": str(exc), "text": "[gateway] " + str(exc)})
+        except ValueError as exc:
+            self._send(400, {"error": str(exc), "text": "[gateway] " + str(exc)})
         except Exception as exc:  # noqa: BLE001 - never take the gateway down
             self._send(
                 500,

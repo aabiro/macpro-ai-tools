@@ -52,9 +52,10 @@ PROVIDERS = {
         "env": "GEMINI_API_KEY",
         "signup": "https://aistudio.google.com/apikey",
         "starts": "",
+        # Key in a header, not ?key=: a key in the URL ends up in logs.
         "verify": ("https://generativelanguage.googleapis.com/v1beta/models"
-                   "/gemini-2.5-flash:generateContent?key=%s",
-                   {"content-type": "application/json"},
+                   "/gemini-2.5-flash:generateContent",
+                   {"x-goog-api-key": "%s", "content-type": "application/json"},
                    {"contents": [{"parts": [{"text": "hi"}]}],
                     "generationConfig": {"maxOutputTokens": 4,
                                          "thinkingConfig": {"thinkingBudget": 0}}}),
@@ -106,10 +107,11 @@ def step(t):
     print("\n  " + _c("36", t))
 
 
-def run(cmd, timeout=30):
+def run(cmd, timeout=30, stdin=None):
     """Run a command. Returns (rc, stdout). Never raises."""
     try:
-        p = subprocess.run(cmd, capture_output=True, timeout=timeout)
+        p = subprocess.run(cmd, capture_output=True, timeout=timeout,
+                           input=stdin.encode("utf-8") if stdin else None)
         return p.returncode, (p.stdout or b"").decode("utf-8", "replace")
     except Exception as exc:
         return 1, str(exc)
@@ -153,15 +155,36 @@ def read_env():
     if os.geteuid() == 0 and os.path.exists(ENV_FILE):
         try:
             with open(ENV_FILE) as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        k, v = line.split("=", 1)
-                        if v.strip():
-                            keys[k.strip()] = v.strip()
+                keys.update(parse_env(f.read()))
         except OSError:
             pass
     return keys
+
+
+def parse_env(text):
+    """The KEY=value lines of an env file that have a value, as a dict."""
+    keys = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            if v.strip():
+                keys[k.strip()] = v.strip()
+    return keys
+
+
+def read_env_file(pre):
+    """The env file's real contents, read with the rights write_env needs anyway.
+
+    Returns {} when there is no file yet, and None when there is one that could
+    not be read -- the caller must not write in that case, or it would replace
+    every key in the file with nothing.
+    """
+    rc, out = run(pre + ["bash", "-c",
+                         "[ ! -e %s ] || cat %s" % (ENV_FILE, ENV_FILE)])
+    if rc != 0:
+        return None
+    return parse_env(out)
 
 
 def gateway_health(port=8081):
@@ -204,8 +227,6 @@ def explain(exc):
 def verify_key(provider, key):
     """Make a real, tiny API call. Returns (True, msg) or (False, msg)."""
     url, headers, body = PROVIDERS[provider]["verify"]
-    if "%s" in url:
-        url = url % key
     hdrs = {}
     for h, v in headers.items():
         hdrs[h] = (v % key) if "%s" in v else v
@@ -230,7 +251,15 @@ def write_env(newkeys):
         bad("This step needs administrator rights and sudo is not available.")
         return False
 
-    existing = read_env()
+    # NOT read_env(). While the gateway is up, that reports which providers
+    # have a key with the word "configured" standing in for each key, and
+    # merging that in replaced every saved key with the word "configured"
+    # whenever a second provider was added.
+    existing = read_env_file(pre)
+    if existing is None:
+        bad("Could not read %s, so nothing was changed." % ENV_FILE)
+        info("Saving without reading it first would wipe the keys already there.")
+        return False
     existing.update(newkeys)
 
     lines = [
@@ -240,23 +269,29 @@ def write_env(newkeys):
     ]
     for p in sorted(PROVIDERS):
         env = PROVIDERS[p]["env"]
-        lines.append("%s=%s" % (env, existing.get(env, "")))
+        lines.append("%s=%s" % (env, existing.pop(env, "")))
+    # Anything else in the file (TELEMETRY_PATH, say) was put there on purpose.
+    for k in sorted(existing):
+        lines.append("%s=%s" % (k, existing[k]))
     body = "\n".join(lines) + "\n"
 
+    # The keys go in on stdin, never in the script: anything in argv is
+    # readable by every local user through `ps` while the command runs. umask
+    # keeps the temp file private before the chmod below.
     stamp = time.strftime("%Y%m%d-%H%M%S")
     script = (
         "set -e\n"
+        "umask 077\n"
         "mkdir -p %(bk)s\n"
         "if [ -f %(env)s ]; then cp -p %(env)s %(bk)s/env.%(stamp)s; fi\n"
         "mkdir -p $(dirname %(env)s)\n"
-        "cat > %(env)s.tmp <<'AIEOF'\n%(body)s"
-        "AIEOF\n"
+        "cat > %(env)s.tmp\n"
         "chown root:aigw %(env)s.tmp 2>/dev/null || true\n"
         "chmod 640 %(env)s.tmp\n"
         "mv %(env)s.tmp %(env)s\n"
-    ) % {"bk": BACKUP_DIR, "env": ENV_FILE, "stamp": stamp, "body": body}
+    ) % {"bk": BACKUP_DIR, "env": ENV_FILE, "stamp": stamp}
 
-    rc, out = run(pre + ["bash", "-c", script], timeout=60)
+    rc, out = run(pre + ["bash", "-c", script], timeout=60, stdin=body)
     if rc != 0:
         bad("Could not write the key file: %s" % out.strip()[:200])
         return False

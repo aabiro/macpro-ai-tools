@@ -64,6 +64,8 @@ An MCP server built with `FastMCP` (`MCPServer`) exposing **18 specialized tools
 - **`g5_patch_bootloader(volume, efi_source, expect_sha1)`**: Installs or updates EFI bootloaders on target volumes.
 - **`g5_clone_volume(source, dest, job_name)`**: Performs block-level or `ditto` volume replication in a background thread.
 
+Every tool declares all four MCP hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) so a client can warn before a call that changes the machine. Seven tools are read-only; the five that run caller-supplied code (`g5_execute_bash`, `g5_run_python`, `g5_run_detached`, `g5_linux_desktop_exec`, `g5_lion_exec`) are marked destructive and open-world.
+
 #### Subsystem & Virtualization Control
 - **`g5_linux_boot_health()`**: Diagnostics for the Linux sidecar instance.
 - **`g5_linux_desktop_exec(command)`**: Launches GUI commands on the Linux desktop session.
@@ -146,5 +148,35 @@ Or register `macpro_mcp_server.py` inside your MCP client settings (`~/.gemini/a
 | **Script Quoting Errors** | Special characters mangle heredoc transfers over SSH. | All code and file writes are base64-encoded prior to transmission. |
 | **Perl Locale Warnings** | OS X Lion emits locale noise on standard command executions. | Automated execution prefix: `export LC_ALL=C LANG=C;`. |
 | **Truncated Error Traces** | Standard truncations discard the end of execution logs. | Custom `_clip()` algorithm keeps 65% head and 35% tail, eliding only the middle. |
+
+---
+
+## 🔐 Where the API keys go
+
+Keys are read from the environment (or `.env`) and each one is sent only to its own provider, over HTTPS, in a request header:
+
+| Key | Sent to | As |
+| :--- | :--- | :--- |
+| `ANTHROPIC_API_KEY` | `api.anthropic.com` | `x-api-key` header |
+| `OPENAI_API_KEY` | `api.openai.com` | `Authorization` header |
+| `GEMINI_API_KEY` | `generativelanguage.googleapis.com` | `x-goog-api-key` header |
+
+Never in a URL (URLs end up in logs) and never on a command line (any local user can read those with `ps`). The caller-supplied model name is the only variable part of an upstream URL, and it is restricted to the characters real model IDs use. `tests/test_secrets.py` checks all of this. The MCP server itself reads no API keys.
+
+---
+
+## 🧪 Tests
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+Offline and hermetic: `subprocess.run` and the outbound HTTP calls are faked, so nothing reaches the Mac Pro or a provider. Every MCP tool has at least one test, and a test fails if the handover kit's copy of `macpro_mcp_server.py` drifts from the root one. For a live run against the machine, use `g5-handoff/kit/remote-control/test-mcp-remote.py`.
+
+---
+
+## 📄 License
+
+[MIT](LICENSE).
 
 [![M8ven Verified](https://m8ven.ai/badge/mcp/aabiro-macpro-ai-tools-kq4irw?variant=verified&v=62584cc06e3dd283388181140dc78d59)](https://m8ven.ai/mcp/aabiro-macpro-ai-tools-kq4irw?s=readme)

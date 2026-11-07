@@ -11,6 +11,9 @@ out to be genuinely hard when doing real work on the machine remotely:
 Each of those encodes a mistake that cost real time. See the notes in
 macpro-ai-tools/g5-handoff/kit/OPERATING-NOTES.md, mirrored on the
 machine at /Users/Shared/ai-cockpit/docs/OPERATING-NOTES.md.
+
+g5-handoff/kit/remote-control/macpro_mcp_server.py is a byte-for-byte copy for
+the handover kit. Edit this file, then copy it there; tests/ fails if they drift.
 """
 
 import base64
@@ -23,8 +26,18 @@ try:
     from mcp.server.mcpserver import MCPServer
 except ImportError:  # pragma: no cover - mcp 1.x fallback
     from mcp.server.fastmcp import FastMCP as MCPServer
+from mcp.types import ToolAnnotations
 
 mcp = MCPServer("MacPro G5 Controller")
+
+# Every tool declares all four hints explicitly, so a client can warn before a
+# call that changes the machine. They are hints, not enforcement:
+#   readOnlyHint     nothing on either machine is changed
+#   destructiveHint  may overwrite or remove existing data
+#   idempotentHint   repeating the same call has no further effect
+#   openWorldHint    runs caller-supplied code, so can reach anything the
+#                    machine can, the network included
+# Tools that only touch the Mac Pro's own state are a closed world.
 
 SSH_TARGET = "macpro"
 SSH_USER = "ai-cockpit"
@@ -119,7 +132,11 @@ def run_ssh_command(cmd: str, stdin_data: str = None, timeout: int = DEFAULT_TIM
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Run Bash on the Mac Pro",
+    readOnlyHint=False, destructiveHint=True,
+    idempotentHint=False, openWorldHint=True,
+))
 def g5_execute_bash(command: str) -> str:
     """
     Execute a raw Bash command on the Mac Pro.
@@ -133,7 +150,11 @@ def g5_execute_bash(command: str) -> str:
     return run_ssh_command(command)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Read a file on the Mac Pro",
+    readOnlyHint=True, destructiveHint=False,
+    idempotentHint=True, openWorldHint=False,
+))
 def g5_read_file(path: str) -> str:
     """
     Read the contents of a file on the Mac Pro.
@@ -167,7 +188,11 @@ def g5_read_file(path: str) -> str:
     return run_ssh_command(f"cat {quoted}")
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Write a file on the Mac Pro",
+    readOnlyHint=False, destructiveHint=True,
+    idempotentHint=True, openWorldHint=False,
+))
 def g5_write_file(path: str, content: str) -> str:
     """
     Write a file to the Mac Pro, base64-encoded in transit so Bash quoting,
@@ -189,7 +214,11 @@ def g5_write_file(path: str, content: str) -> str:
     return f"Successfully wrote {len(content)} bytes to {path}"
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Run Python 2.7 on the Mac Pro",
+    readOnlyHint=False, destructiveHint=True,
+    idempotentHint=False, openWorldHint=True,
+))
 def g5_run_python(script_content: str) -> str:
     """
     Execute a Python script on the Mac Pro using its native Python 2.7.
@@ -209,7 +238,11 @@ def g5_run_python(script_content: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Start a detached job",
+    readOnlyHint=False, destructiveHint=True,
+    idempotentHint=False, openWorldHint=True,
+))
 def g5_run_detached(script: str, job_name: str) -> str:
     """
     Start a long-running Bash script on the Mac that OUTLIVES this request.
@@ -267,7 +300,11 @@ def g5_run_detached(script: str, job_name: str) -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Check a detached job",
+    readOnlyHint=True, destructiveHint=False,
+    idempotentHint=True, openWorldHint=False,
+))
 def g5_job_status(job_name: str, log_lines: int = 25) -> str:
     """
     Check a job started by g5_run_detached.
@@ -310,7 +347,11 @@ def g5_job_status(job_name: str, log_lines: int = 25) -> str:
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Copy-job progress",
+    readOnlyHint=True, destructiveHint=False,
+    idempotentHint=True, openWorldHint=False,
+))
 def g5_job_progress(process_name: str = "ditto", job_name: str = "") -> str:
     """
     Real progress for a long file-copy job, by tree position rather than bytes.
@@ -358,7 +399,11 @@ def g5_job_progress(process_name: str = "ditto", job_name: str = "") -> str:
     return run_ssh_command("".join(parts), timeout=100)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Session privileges",
+    readOnlyHint=True, destructiveHint=False,
+    idempotentHint=True, openWorldHint=False,
+))
 def g5_privileges() -> str:
     """
     Report what this session can and cannot do, so calls are not wasted
@@ -387,7 +432,11 @@ def g5_privileges() -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Install an app from a .pkg",
+    readOnlyHint=False, destructiveHint=True,
+    idempotentHint=False, openWorldHint=False,
+))
 def g5_install_app_from_pkg(pkg_path: str, app_name: str = "") -> str:
     """
     Install a .app from an Apple flat .pkg WITHOUT sudo.
@@ -432,7 +481,11 @@ rm -rf "$WORK/pkg" 2>/dev/null
     return g5_run_detached(script, job)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Verify a large copy",
+    readOnlyHint=True, destructiveHint=False,
+    idempotentHint=True, openWorldHint=False,
+))
 def g5_verify_copy(source_path: str, dest_path: str) -> str:
     """
     Prove a large file copied intact. Checks byte size AND, for disk images,
@@ -455,7 +508,11 @@ def g5_verify_copy(source_path: str, dest_path: str) -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Disk layout",
+    readOnlyHint=True, destructiveHint=False,
+    idempotentHint=True, openWorldHint=False,
+))
 def g5_disk_layout() -> str:
     """
     Report the partition layout with the two rules that actually govern it.
@@ -495,7 +552,11 @@ def g5_disk_layout() -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Patch boot.efi on a volume",
+    readOnlyHint=False, destructiveHint=True,
+    idempotentHint=True, openWorldHint=False,
+))
 def g5_patch_bootloader(volume: str, efi_source: str, expect_sha1: str = "") -> str:
     """
     Install a patched boot.efi onto a volume, handling the two traps that make
@@ -544,7 +605,11 @@ def g5_patch_bootloader(volume: str, efi_source: str, expect_sha1: str = "") -> 
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Clone a volume",
+    readOnlyHint=False, destructiveHint=True,
+    idempotentHint=False, openWorldHint=False,
+))
 def g5_clone_volume(source: str, dest: str, job_name: str = "clone") -> str:
     """
     Clone a live, mounted volume to another volume, detached.
@@ -632,19 +697,28 @@ def run_linux_command(cmd: str, timeout: int = DEFAULT_TIMEOUT) -> str:
     except subprocess.TimeoutExpired:
         return "TIMEOUT after %ss. The machine may be mid-boot." % timeout
     out = (p.stdout or "") + (p.stderr or "")
-    if p.returncode != 0 and "Connection refused" in out:
+    # Only failures to reach THIS host mean Debian is down. `lion` is itself an
+    # ssh, to the VM on port 2222, and its refusals come back through here in
+    # the same words -- those mean the VM is stopped, which callers report.
+    here = "connect to host %s port 22: " % LINUX_HOST
+    if p.returncode != 0 and here + "Connection refused" in out:
         return ("Debian is not answering on SSH.\n\n"
                 "Most likely the machine is booted into Mac OS X instead -- only one "
                 "of the two runs at a time. If Debian IS booted, the next suspect is "
                 "fail2ban having banned this host, NOT a failed sshd: a refused "
                 "connection means something sent a reset. Check with\n"
                 "    sudo fail2ban-client status sshd")
-    if p.returncode != 0 and ("No route to host" in out or "timed out" in out):
+    if p.returncode != 0 and here in out and (
+            "No route to host" in out or "timed out" in out):
         return "The machine is not reachable at all. It may be powered off."
     return _clip(out.strip() or "(no output)")
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Debian boot health",
+    readOnlyHint=True, destructiveHint=False,
+    idempotentHint=True, openWorldHint=False,
+))
 def g5_linux_boot_health() -> str:
     """
     Report the numbers that decide whether the Debian side can boot at all.
@@ -677,7 +751,11 @@ def g5_linux_boot_health() -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Run in the Debian desktop",
+    readOnlyHint=False, destructiveHint=True,
+    idempotentHint=False, openWorldHint=True,
+))
 def g5_linux_desktop_exec(command: str) -> str:
     """
     Run a command inside the logged-in desktop session on the Debian side.
@@ -716,7 +794,11 @@ def g5_linux_desktop_exec(command: str) -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Debian desktop screenshot",
+    readOnlyHint=False, destructiveHint=False,
+    idempotentHint=False, openWorldHint=False,
+))
 def g5_linux_screenshot(save_dir: str = "/tmp") -> str:
     """
     Capture the Debian desktop and bring the image back to this machine.
@@ -789,7 +871,11 @@ def g5_linux_screenshot(save_dir: str = "/tmp") -> str:
 # the real Lion install. See kit/LION-VM.md.
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Control the Lion VM",
+    readOnlyHint=False, destructiveHint=False,
+    idempotentHint=True, openWorldHint=False,
+))
 def g5_lion_vm_control(action: str = "status") -> str:
     """
     Start, stop or inspect the Lion virtual machine on the Debian side.
@@ -821,7 +907,11 @@ def g5_lion_vm_control(action: str = "status") -> str:
             % action)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(
+    title="Run as root in the Lion VM",
+    readOnlyHint=False, destructiveHint=True,
+    idempotentHint=False, openWorldHint=True,
+))
 def g5_lion_exec(command: str, timeout: int = 120) -> str:
     """
     Run a shell command as root INSIDE the Lion virtual machine.
