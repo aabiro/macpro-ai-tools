@@ -146,3 +146,5 @@ Or register `macpro_mcp_server.py` inside your MCP client settings (`~/.gemini/a
 | **Script Quoting Errors** | Special characters mangle heredoc transfers over SSH. | All code and file writes are base64-encoded prior to transmission. |
 | **Perl Locale Warnings** | OS X Lion emits locale noise on standard command executions. | Automated execution prefix: `export LC_ALL=C LANG=C;`. |
 | **Truncated Error Traces** | Standard truncations discard the end of execution logs. | Custom `_clip()` algorithm keeps 65% head and 35% tail, eliding only the middle. |
+
+[![M8ven Verified](https://m8ven.ai/badge/mcp/aabiro-macpro-ai-tools-kq4irw?variant=verified&v=62584cc06e3dd283388181140dc78d59)](https://m8ven.ai/mcp/aabiro-macpro-ai-tools-kq4irw?s=readme)
